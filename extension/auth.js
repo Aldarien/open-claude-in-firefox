@@ -47,7 +47,10 @@ async function getIdentity() {
 async function createToken() {
   const { privateKey, publicJwk } = await getIdentity();
   const now = Math.floor(Date.now() / 1000);
-  const head = b64urlJson({ alg: "ES256", typ: "JWT", kid: publicJwk.kid });
+  const { label } = await chrome.storage.local.get("label");
+  // The public key and a label hint ride in the protected header so the hub can offer this key for approval in its TUI.
+  const { kty, crv, x, y } = publicJwk;
+  const head = b64urlJson({ alg: "ES256", typ: "JWT", kid: publicJwk.kid, jwk: { kty, crv, x, y }, label: label || "firefox" });
   const body = b64urlJson({ iss: OCF_ISSUER, aud: OCF_AUDIENCE, iat: now, exp: now + 30, jti: crypto.randomUUID() });
   const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, new TextEncoder().encode(`${head}.${body}`));
   return `${head}.${body}.${b64url(sig)}`; // WebCrypto returns raw r||s, which is the JWS ES256 format

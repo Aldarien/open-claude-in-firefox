@@ -1,54 +1,140 @@
+const $ = (id) => document.getElementById(id);
+
+function flash(el, text, ms = 2000) {
+  el.textContent = text;
+  setTimeout(() => (el.textContent = ""), ms);
+}
+
+async function copy(text, noteEl, msg = "Copied") {
+  try {
+    await navigator.clipboard.writeText(text);
+    flash(noteEl, msg);
+  } catch {
+    flash(noteEl, "Copy failed");
+  }
+}
+
+// --- Connection ---
 (async () => {
-  const urlInput = document.getElementById("hubUrl");
+  const urlInput = $("hubUrl");
   urlInput.value = await getHubUrl();
   const httpsUrl = () => urlInput.value.replace(/^wss:/, "https:").replace(/\/ws$/, "/");
-  document.getElementById("trust").href = httpsUrl();
-  document.getElementById("saveUrl").addEventListener("click", async () => {
+  $("trust").href = httpsUrl();
+
+  $("saveUrl").addEventListener("click", async () => {
     const next = urlInput.value.trim();
-    const note = document.getElementById("urlNote");
     if (next === (await getHubUrl())) {
-      note.textContent = "No change";
+      flash($("urlNote"), "No change");
     } else {
       await chrome.storage.local.set({ hubUrl: next });
-      note.textContent = "Saved, reconnecting…";
+      flash($("urlNote"), "Saved, reconnecting…");
     }
-    document.getElementById("trust").href = httpsUrl();
-    setTimeout(() => (note.textContent = ""), 2000);
+    $("trust").href = httpsUrl();
   });
+
   const { publicJwk } = await getIdentity();
+  $("fp").textContent = publicJwk.kid;
+  $("copyFp").addEventListener("click", () => copy(publicJwk.kid, $("copyNote"), "Fingerprint copied"));
+
+  const labelInput = $("label");
+  labelInput.value = (await chrome.storage.local.get("label")).label || "";
+  $("saveLabel").addEventListener("click", async () => {
+    await chrome.storage.local.set({ label: labelInput.value.trim().slice(0, 40) });
+    flash($("labelNote"), "Saved");
+  });
+
   const jwkText = JSON.stringify(publicJwk, null, 2);
-  document.getElementById("jwk").value = jwkText;
-  document.getElementById("copy").addEventListener("click", () => navigator.clipboard.writeText(jwkText));
+  $("jwk").textContent = jwkText;
+  $("copy").addEventListener("click", () => copy(jwkText, $("copyNote"), "Key copied"));
+
   const showState = async () => {
     const { connState } = await chrome.storage.local.get("connState");
-    const el = document.getElementById("conn");
-    if (!connState) el.textContent = "Not connected yet.";
-    else if (connState.connected) el.textContent = "Connected to " + connState.url;
-    else el.textContent = "Disconnected." + (connState.error ? " " + connState.error : "");
+    const pill = $("connPill");
+    const lead = $("conn");
+    pill.className = "pill";
+    $("connError").textContent = "";
+    if (!connState) {
+      pill.textContent = "Not connected yet";
+      lead.textContent = "Waiting for the first connection attempt.";
+    } else if (connState.connected) {
+      pill.classList.add("ok");
+      pill.textContent = "Connected";
+      lead.textContent = "Connected to " + connState.url;
+    } else {
+      pill.classList.add("err");
+      pill.textContent = "Disconnected";
+      lead.textContent = "Not connected to the hub.";
+      if (connState.error) $("connError").textContent = connState.error;
+    }
   };
   showState();
   chrome.storage.onChanged.addListener(showState);
 })();
+
+// --- Blocklist ---
 (async () => {
-  const s = await loadBlocklistSettings();
-  const wrap = document.getElementById("cats");
-  for (const [key, cat] of Object.entries(BLOCKLIST_CATEGORIES)) {
-    const l = document.createElement("label");
-    l.className = "cat";
+  const saved = await loadBlocklistSettings();
+  const wrap = $("cats");
+  const savebar = $("savebar");
+  let baseline = "";
+
+  const cards = Object.entries(BLOCKLIST_CATEGORIES).map(([key, cat]) => {
+    const label = document.createElement("label");
+    label.className = "cat";
+    label.title = cat.domains.join(", ");
     const cb = document.createElement("input");
-    cb.type = "checkbox"; cb.value = key; cb.checked = s.enabledCategories.includes(key);
-    l.append(cb, " " + cat.label);
-    const d = document.createElement("div");
-    d.className = "doms"; d.textContent = cat.domains.join(", ");
-    wrap.append(l, d);
-  }
-  document.getElementById("custom").value = (s.customDomains || []).join("\n");
-  document.getElementById("save").addEventListener("click", async () => {
-    const enabledCategories = [...wrap.querySelectorAll("input:checked")].map((i) => i.value);
-    const customDomains = document.getElementById("custom").value.split("\n").map(normalizeDomain).filter(Boolean);
+    cb.type = "checkbox";
+    cb.value = key;
+    const sw = document.createElement("span");
+    sw.className = "switch";
+    const text = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = cat.label;
+    const doms = document.createElement("div");
+    doms.className = "doms";
+    const shown = cat.domains.slice(0, 3).join(", ");
+    doms.textContent = cat.domains.length > 3 ? `${shown} +${cat.domains.length - 3} more` : shown;
+    text.append(name, doms);
+    label.append(cb, sw, text);
+    wrap.append(label);
+    return { label, cb, key };
+  });
+
+  const state = () => JSON.stringify({
+    c: cards.filter((c) => c.cb.checked).map((c) => c.key),
+    d: $("custom").value.split("\n").map(normalizeDomain).filter(Boolean),
+  });
+
+  const refresh = () => {
+    for (const c of cards) c.label.classList.toggle("on", c.cb.checked);
+    const n = cards.filter((c) => c.cb.checked).length;
+    $("count").textContent = n ? `${n} of ${cards.length} categories blocked` : "No categories blocked";
+    savebar.classList.toggle("show", state() !== baseline);
+  };
+
+  const apply = (settings) => {
+    for (const c of cards) c.cb.checked = settings.enabledCategories.includes(c.key);
+    $("custom").value = (settings.customDomains || []).join("\n");
+    baseline = state();
+    refresh();
+  };
+  apply(saved);
+
+  for (const c of cards) c.cb.addEventListener("change", refresh);
+  $("custom").addEventListener("input", refresh);
+  $("allOn").addEventListener("click", () => { cards.forEach((c) => (c.cb.checked = true)); refresh(); });
+  $("allOff").addEventListener("click", () => { cards.forEach((c) => (c.cb.checked = false)); refresh(); });
+  $("discard").addEventListener("click", () => apply(saved));
+
+  $("save").addEventListener("click", async () => {
+    const enabledCategories = cards.filter((c) => c.cb.checked).map((c) => c.key);
+    const customDomains = $("custom").value.split("\n").map(normalizeDomain).filter(Boolean);
     await chrome.storage.sync.set({ [BLOCKLIST_STORAGE_KEY]: { enabledCategories, customDomains } });
-    const st = document.getElementById("status");
-    st.textContent = "Saved";
-    setTimeout(() => (st.textContent = ""), 1500);
+    saved.enabledCategories = enabledCategories;
+    saved.customDomains = customDomains;
+    baseline = state();
+    $("status").textContent = "Saved";
+    setTimeout(() => { $("status").textContent = ""; refresh(); }, 900);
   });
 })();
