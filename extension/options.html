@@ -1,28 +1,186 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<title>Claude MCP – Blocked domains</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude MCP – Settings</title>
 <style>
-  body { font: 14px system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
-  label.cat { display: block; margin: 6px 0; }
-  .doms { color: #666; font-size: 12px; margin-left: 22px; }
-  textarea { width: 100%; height: 100px; }
-  #status { color: green; margin-left: 8px; }
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #e3e6ec;
+    --accent: #d97757; --accent-ink: #ffffff; --accent-soft: #fbece6;
+    --ok: #1a8f5c; --ok-soft: #e3f5ec; --err: #c8382e; --err-soft: #fbe9e7; --idle: #8a93a5; --idle-soft: #eceef2;
+    --code: #f0f2f6; --shadow: 0 1px 2px rgba(16,24,40,.05), 0 4px 14px rgba(16,24,40,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --card: #1c2028; --text: #e8eaf0; --muted: #97a0b2; --line: #2b313c;
+      --accent: #e4876a; --accent-ink: #1b1209; --accent-soft: #33241f;
+      --ok: #4ac48a; --ok-soft: #17302a; --err: #ff7b70; --err-soft: #3a1f1d; --idle: #8993a6; --idle-soft: #262b35;
+      --code: #232833; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 16px 110px; }
+
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  header img { width: 44px; height: 44px; border-radius: 11px; box-shadow: var(--shadow); }
+  header h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .grow { flex: 1; }
+
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+          background: var(--idle-soft); color: var(--idle); white-space: nowrap; }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.err { background: var(--err-soft); color: var(--err); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 20px 22px; margin-bottom: 18px; }
+  .card h2 { font-size: 16px; margin: 0 0 4px; letter-spacing: -.01em; }
+  .card > .lead { margin: 0 0 16px; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+  .error-line { color: var(--err); font-size: 13px; margin: 10px 0 0; }
+  .error-line:empty { display: none; }
+
+  .steps { list-style: none; margin: 18px 0 0; padding: 0; counter-reset: step; }
+  .steps > li { counter-increment: step; position: relative; padding: 0 0 18px 40px; }
+  .steps > li:last-child { padding-bottom: 0; }
+  .steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%;
+                        background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+  .steps > li:not(:last-child)::after { content: ""; position: absolute; left: 12.5px; top: 30px; bottom: 4px; width: 1px; background: var(--line); }
+  .steps h3 { margin: 2px 0 4px; font-size: 14px; }
+  .steps p { margin: 0 0 8px; color: var(--muted); }
+
+  label.field { display: block; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=text], textarea {
+    width: 100%; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit;
+  }
+  input[type=text]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .row input[type=text] { flex: 1; min-width: 160px; width: auto; }
+  textarea { resize: vertical; min-height: 96px; }
+  code, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
+  code { background: var(--code); padding: 2px 6px; border-radius: 6px; }
+  .fp { display: flex; align-items: center; gap: 10px; background: var(--code); border-radius: 9px; padding: 9px 12px; margin: 8px 0; }
+  .fp .mono { word-break: break-all; flex: 1; }
+  pre.key { margin: 8px 0 0; background: var(--code); border-radius: 9px; padding: 12px; overflow: auto; max-height: 150px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 6px; }
+
+  button { font: inherit; font-weight: 600; cursor: pointer; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 8px 14px; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover { filter: brightness(1.06); }
+  button.ghost { background: transparent; }
+  button.small { padding: 5px 10px; font-size: 12.5px; }
+  a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .note { color: var(--ok); font-size: 13px; font-weight: 600; min-height: 1em; }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+  .toolbar .count { color: var(--muted); font-size: 13px; }
+  .cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 10px; }
+  .cat { position: relative; border: 1px solid var(--line); border-radius: 11px; padding: 12px 14px; background: var(--bg); cursor: pointer;
+         display: flex; gap: 12px; align-items: flex-start; transition: border-color .12s, background .12s; }
+  .cat:hover { border-color: var(--muted); }
+  .cat.on { border-color: var(--accent); background: var(--accent-soft); }
+  .cat input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch { flex: none; width: 34px; height: 20px; border-radius: 999px; background: var(--idle); position: relative; margin-top: 2px; transition: background .15s; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .cat.on .switch { background: var(--accent); }
+  .cat.on .switch::after { transform: translateX(14px); }
+  .cat input:focus-visible + .switch { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .cat .name { font-weight: 600; }
+  .cat .doms { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-word; }
+
+  .savebar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); box-shadow: 0 -6px 20px rgba(16,24,40,.08);
+             transform: translateY(110%); transition: transform .18s; z-index: 10; }
+  .savebar.show { transform: none; }
+  .savebar .in { max-width: 760px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+  .savebar .msg { flex: 1; font-weight: 600; }
 </style>
-<h1>Connection</h1>
-<p id="conn">Checking…</p>
-<p>Hub URL: <input id="hubUrl" size="36"> <button id="saveUrl">Save</button> <span id="urlNote"></span></p>
-<p>1. Import the hub CA once (<code>certs/ocf-hub-ca.crt</code>): Settings &gt; Privacy &amp; Security &gt; View Certificates &gt; Authorities &gt; Import, tick "Trust this CA to identify websites". Then <a id="trust" href="#" target="_blank">check the hub page</a> (it should open without a warning).</p>
-<p>2. Add this extension's public key to the hub's <code>data/jwks.json</code> (inside <code>"keys": [ … ]</code>):</p>
-<textarea id="jwk" readonly style="height:120px"></textarea>
-<p><button id="copy">Copy key</button></p>
-<hr>
-<h1>Blocked domains</h1>
-<p>Tools will refuse to navigate to or act on pages in the selected categories. Everything is off by default.</p>
-<div id="cats"></div>
-<h3>Custom domains</h3>
-<p>One per line. Subdomains are included.</p>
-<textarea id="custom"></textarea>
-<p><button id="save">Save</button><span id="status"></span></p>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="icons/icon128.png" alt="">
+    <div>
+      <h1>Claude MCP</h1>
+      <p>Browser automation for Claude: hub connection and domain blocklist</p>
+    </div>
+    <div class="grow"></div>
+    <span id="connPill" class="pill">Checking…</span>
+  </header>
+
+  <section class="card" id="connection">
+    <h2>Connection</h2>
+    <p class="lead" id="conn">Checking…</p>
+
+    <label class="field" for="hubUrl">Hub URL</label>
+    <div class="row">
+      <input type="text" id="hubUrl" spellcheck="false" autocomplete="off">
+      <button id="saveUrl" class="primary">Save</button>
+      <span id="urlNote" class="note"></span>
+    </div>
+    <p class="hint">Changing the URL reconnects right away.</p>
+    <p id="connError" class="error-line"></p>
+
+    <ol class="steps">
+      <li>
+        <h3>Trust the hub's certificate</h3>
+        <p>Import <code>certs/ocf-hub-ca.crt</code> once: Settings &rsaquo; Privacy &amp; Security &rsaquo; View Certificates &rsaquo; Authorities &rsaquo; Import,
+           and tick <em>Trust this CA to identify websites</em>.</p>
+        <a id="trust" href="#" target="_blank" rel="noopener">Check the hub page</a> <span class="hint">(it should open without a warning)</span>
+      </li>
+      <li>
+        <h3>Name this browser</h3>
+        <p>Shown in the hub so you can tell your browsers apart.</p>
+        <div class="row">
+          <input type="text" id="label" placeholder="firefox" maxlength="40" autocomplete="off">
+          <button id="saveLabel">Save</button>
+          <span id="labelNote" class="note"></span>
+        </div>
+      </li>
+      <li>
+        <h3>Approve this browser in the hub</h3>
+        <p>Run <code>docker exec -it ocf-hub node /app/tui.js</code>, open <em>Pending approvals</em> and match this fingerprint:</p>
+        <div class="fp"><span class="mono" id="fp"></span><button id="copyFp" class="small ghost">Copy</button></div>
+        <details>
+          <summary>Public key (for manual setup)</summary>
+          <pre class="key mono" id="jwk"></pre>
+          <div class="row" style="margin-top:8px"><button id="copy" class="small">Copy key</button><span id="copyNote" class="note"></span></div>
+        </details>
+      </li>
+    </ol>
+  </section>
+
+  <section class="card" id="blocklist">
+    <h2>Blocked domains</h2>
+    <p class="lead">Tools refuse to navigate to or act on pages in the categories you switch on. Everything is off by default.</p>
+
+    <div class="toolbar">
+      <button id="allOn" class="small">Enable all</button>
+      <button id="allOff" class="small">Disable all</button>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="cats" id="cats"></div>
+
+    <h3 style="margin:22px 0 4px;font-size:14px">Custom domains</h3>
+    <p class="hint" style="margin:0 0 8px">One per line. Subdomains are included.</p>
+    <textarea id="custom" placeholder="example.com&#10;intranet.example.org" spellcheck="false"></textarea>
+  </section>
+</div>
+
+<div class="savebar" id="savebar">
+  <div class="in">
+    <span class="msg">Unsaved blocklist changes</span>
+    <span id="status" class="note"></span>
+    <button id="discard" class="ghost">Discard</button>
+    <button id="save" class="primary">Save</button>
+  </div>
+</div>
+
 <script src="blocklist.js"></script>
 <script src="auth.js"></script>
 <script src="options.js"></script>
+</body>
+</html>
