@@ -103,9 +103,26 @@ export async function startHub(identities = []) {
 export function connectWs(hub, protocols, origin = "moz-extension://test") {
   return new Promise((resolve) => {
     const ws = new WebSocket(`ws://127.0.0.1:${hub.wsPort}/ws`, protocols, { headers: origin ? { Origin: origin } : {} });
+    // Capture messages from the very start: the hub can send one in the same packet as the handshake response.
+    ws.queued = [];
+    ws.waiting = [];
+    ws.on("message", (d) => {
+      const m = JSON.parse(d.toString());
+      const w = ws.waiting.shift();
+      if (w) w(m); else ws.queued.push(m);
+    });
     ws.once("open", () => resolve({ ok: true, ws }));
     ws.once("unexpected-response", (_req, res) => { resolve({ ok: false, status: res.statusCode, message: res.statusMessage }); res.resume(); });
     ws.once("error", (e) => resolve({ ok: false, error: e.message }));
+  });
+}
+
+// Next JSON message received on a socket from connectWs (queued ones first); rejects instead of hanging.
+export function nextMessage(ws, timeout = 5000) {
+  if (ws.queued.length) return Promise.resolve(ws.queued.shift());
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("no message received")), timeout);
+    ws.waiting.push((m) => { clearTimeout(timer); resolve(m); });
   });
 }
 
@@ -145,9 +162,10 @@ export function mcpClient(hub) {
   return {
     // Resolves to the tool's text, or "ERROR: <message>".
     call(tool, args = {}) {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const id = String(++n);
-        waiters.set(id, (m) => resolve(m.type === "tool_error" ? `ERROR: ${m.error}` : m.result.content[0].text));
+        const timer = setTimeout(() => reject(new Error(`no reply to ${tool} within 10 s`)), 10000);
+        waiters.set(id, (m) => { clearTimeout(timer); resolve(m.type === "tool_error" ? `ERROR: ${m.error}` : m.result.content[0].text); });
         socket.write(JSON.stringify({ id, type: "tool_request", tool, args }) + "\n");
       });
     },
