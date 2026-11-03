@@ -94,7 +94,7 @@ Optional domain blocklist: extension options > Blocked domains (all categories o
 ## 8. Configuration reference
 Environment (container; restart needed): `OCF_BIND_HOST` (default `127.0.0.1`; compose sets `0.0.0.0` for the WS bridge only), `OCF_WS_PORT` (18766),
 `OCF_JWKS` (`/data/jwks.json`), `OCF_CONFIG` (`/data/config.json`), `OCF_PORT` (TUI's internal port, 18765).
-`/data/config.json` (edit in the TUI > Settings, applies live): `tokenMaxAgeSeconds` (60), `requestTimeoutSeconds` (60),
+`/data/config.json` (edit in the TUI > Settings, applies live): `tokenMaxAgeSeconds` (120), `requestTimeoutSeconds` (60),
 `reconnectGraceSeconds` (5), `allowedOriginPrefixes` (`["moz-extension://"]`), `maxPendingKeys` (20), `pendingTtlHours` (168).
 Files in `data/`: `jwks.json` (authorized keys, each with a `label`), `pending.json` (keys awaiting approval), `config.json`, `ca/` (CA key).
 
