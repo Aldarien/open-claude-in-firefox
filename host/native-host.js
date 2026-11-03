@@ -6,6 +6,7 @@
 // and the MCP server (TCP on localhost).
 
 import net from "node:net";
+import tls from "node:tls";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -66,15 +67,30 @@ const TCP_PORT = getPort();
 function connectTcp() {
   if (tcpSocket) return;
 
-  tcpSocket = new net.Socket();
-
-  tcpSocket.connect(TCP_PORT, "127.0.0.1", () => {
+  const onConnect = () => {
     reconnectAttempts = 0;
     if (reconnectTimer) {
       clearInterval(reconnectTimer);
       reconnectTimer = null;
     }
-  });
+  };
+
+  if (process.env.OCF_TLS_SERVERNAME) {
+    // Behind a TLS-terminating proxy (Traefik TCP router matched on SNI).
+    // Traffic stays on the internal Docker network, so the proxy's default certificate is accepted.
+    tcpSocket = tls.connect(
+      {
+        host: process.env.OCF_HOST,
+        port: Number(process.env.OCF_PORT || 443),
+        servername: process.env.OCF_TLS_SERVERNAME,
+        rejectUnauthorized: false,
+      },
+      onConnect
+    );
+  } else {
+    tcpSocket = new net.Socket();
+    tcpSocket.connect(TCP_PORT, process.env.OCF_HOST || "127.0.0.1", onConnect);
+  }
 
   tcpSocket.on("data", (chunk) => {
     // newline-delimited JSON from MCP server

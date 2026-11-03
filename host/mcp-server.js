@@ -402,7 +402,7 @@ async function start() {
       }
     });
 
-    tcpServer.listen(TCP_PORT, "127.0.0.1", () => {
+    tcpServer.listen(TCP_PORT, process.env.OCF_BIND_HOST || "127.0.0.1", () => {
       mode = "primary";
       writePidfile();
       process.stderr.write(`Primary MCP server listening on :${TCP_PORT}\n`);
