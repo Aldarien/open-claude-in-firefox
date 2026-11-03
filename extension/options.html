@@ -8,6 +8,14 @@
   textarea { width: 100%; height: 100px; }
   #status { color: green; margin-left: 8px; }
 </style>
+<h1>Connection</h1>
+<p id="conn">Checking…</p>
+<p>Hub URL: <input id="hubUrl" size="36"> <button id="saveUrl">Save</button></p>
+<p>1. <a id="trust" href="#" target="_blank">Trust the hub certificate</a> (Traefik's self-signed certificate: accept the warning once).</p>
+<p>2. Add this extension's public key to the hub's <code>data/jwks.json</code> (inside <code>"keys": [ … ]</code>):</p>
+<textarea id="jwk" readonly style="height:120px"></textarea>
+<p><button id="copy">Copy key</button></p>
+<hr>
 <h1>Blocked domains</h1>
 <p>Tools will refuse to navigate to or act on pages in the selected categories. Everything is off by default.</p>
 <div id="cats"></div>
@@ -16,4 +24,5 @@
 <textarea id="custom"></textarea>
 <p><button id="save">Save</button><span id="status"></span></p>
 <script src="blocklist.js"></script>
+<script src="auth.js"></script>
 <script src="options.js"></script>
