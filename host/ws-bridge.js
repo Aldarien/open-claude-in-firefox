@@ -8,7 +8,7 @@ import http from "node:http";
 import fs from "node:fs";
 import { EventEmitter } from "node:events";
 import { WebSocketServer } from "ws";
-import { calculateJwkThumbprint, createLocalJWKSet, decodeProtectedHeader, importJWK, jwtVerify } from "jose";
+import { calculateJwkThumbprint, createLocalJWKSet, decodeJwt, decodeProtectedHeader, importJWK, jwtVerify } from "jose";
 import { getConfig } from "./config.js";
 import { addPending, sanitizeJwk } from "./keystore.js";
 
@@ -81,8 +81,9 @@ export function startWsBridge({ port, host, jwksPath, audience, issuer, onBrowse
 
   server.on("upgrade", async (req, socket, head) => {
     let info;
-    const reject = (code, why) => {
-      log(`WS rejected: ${why}`);
+    let rawToken;
+    const reject = (code, why, detail) => {
+      log(`WS rejected: ${why}${detail ? ` (${detail})` : ""}`);
       socket.write(`HTTP/1.1 ${code} ${why}\r\nConnection: close\r\n\r\n`);
       socket.destroy();
     };
@@ -91,12 +92,17 @@ export function startWsBridge({ port, host, jwksPath, audience, issuer, onBrowse
       const origin = String(req.headers.origin || "");
       if (!getConfig().allowedOriginPrefixes.some((p) => origin.startsWith(p))) return reject(403, "Bad Origin");
       const protocols = String(req.headers["sec-websocket-protocol"] || "").split(",").map((s) => s.trim());
-      const token = protocols.find((p) => p && p !== PROTOCOL);
+      const token = (rawToken = protocols.find((p) => p && p !== PROTOCOL));
       if (!protocols.includes(PROTOCOL) || !token) return reject(401, "Missing token");
       info = await verifyToken(token, { jwksPath, audience, issuer, origin });
       info.origin = origin;
     } catch (e) {
-      return reject(401, e.message === "pending approval" ? "Pending approval" : "Unauthorized");
+      let detail = e.code || e.message;
+      if (e.code === "ERR_JWT_EXPIRED" || e.code === "ERR_JWT_CLAIM_VALIDATION_FAILED") {
+        try { const p = decodeJwt(rawToken); detail += ` iat=${p.iat} exp=${p.exp} now=${Math.floor(Date.now() / 1000)}`; } catch {}
+      }
+      detail += ` from=${req.headers["x-forwarded-for"] || req.socket.remoteAddress} origin=${req.headers.origin || "-"}`;
+      return reject(401, e.message === "pending approval" ? "Pending approval" : "Unauthorized", detail);
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
       ws.isAlive = true;
