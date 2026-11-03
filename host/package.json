@@ -4,6 +4,9 @@
   "private": true,
   "description": "MCP server and native messaging host for Open Claude in Firefox",
   "type": "module",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "jose": "^5.10.0",
