@@ -51,16 +51,22 @@ jobs:
 
       - name: Build the XPI
         run: |
-          mkdir -p dist
-          npx --yes web-ext@8 build -s extension -a dist --overwrite-dest
-          mv dist/*.zip "dist/claude-in-firefox-${VERSION}.xpi"
+          mkdir -p dist build
+          npx --yes web-ext@8 build -s extension -a build --overwrite-dest
+          mv build/*.zip "build/claude-in-firefox-${VERSION}-unsigned.xpi"
 
-      - name: Sign the XPI (unlisted), if AMO credentials are set
+      # With AMO credentials the signed file is released as claude-in-firefox-<version>.xpi;
+      # without them the plain build is released as claude-in-firefox-<version>-unsigned.xpi.
+      - name: Sign the XPI (unlisted)
         if: env.WEB_EXT_API_KEY != '' && env.WEB_EXT_API_SECRET != ''
         run: |
           npx --yes web-ext@8 sign -s extension -a signed --channel=unlisted \
             --api-key="$WEB_EXT_API_KEY" --api-secret="$WEB_EXT_API_SECRET"
-          cp signed/*.xpi "dist/claude-in-firefox-${VERSION}-signed.xpi"
+          cp signed/*.xpi "dist/claude-in-firefox-${VERSION}.xpi"
+
+      - name: Use the unsigned XPI (no AMO credentials)
+        if: env.WEB_EXT_API_KEY == '' || env.WEB_EXT_API_SECRET == ''
+        run: cp "build/claude-in-firefox-${VERSION}-unsigned.xpi" dist/
 
       - name: Pack the Claude Desktop extension (.mcpb)
         if: hashFiles('mcpb/manifest.json') != ''

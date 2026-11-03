@@ -114,9 +114,11 @@ Files in `data/`: `jwks.json` (authorized keys, each with a `label`), `pending.j
 - `skill/firefox-browser/SKILL.md` tells Claude how to use the tools; copy it to `~/.claude/skills/firefox-browser/`.
 
 ## Releases (GitHub Actions)
-`.github/workflows/release.yml` builds `claude-in-firefox-<version>.xpi` and `claude-in-firefox-<version>.mcpb` and attaches them to the GitHub release.
+`.github/workflows/release.yml` builds the extension and the Claude Desktop bundle and attaches them to the GitHub release.
 - Push a tag `vX.Y.Z` (the tag must match `extension/manifest.json` and `mcpb/manifest.json`), or run the workflow by hand with an existing tag
   (Actions > release > Run workflow; the workflow file must be on `main`).
 - Release notes are the tag commit's message (the squashed "Release X.Y.Z" commit).
-- Optional: add repo secrets `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET` (addons.mozilla.org) to also attach a signed `-signed.xpi`
-  (unlisted channel), which installs permanently in regular Firefox.
+- File names: `claude-in-firefox-<version>-unsigned.xpi` when built without signing credentials (needs `xpinstall.signatures.required=false`
+  in LibreWolf/Developer Edition). With repo secrets `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET` (addons.mozilla.org) the workflow signs it
+  (unlisted channel) and attaches `claude-in-firefox-<version>.xpi` instead, which installs permanently in regular Firefox.
+  The bundle is always `claude-in-firefox-<version>.mcpb`.
