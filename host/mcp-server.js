@@ -314,9 +314,9 @@ function startClientMode() {
   function connect() {
     primarySocket = net.createConnection(TCP_PORT, "127.0.0.1", () => {
       process.stderr.write(`Connected to primary MCP server on :${TCP_PORT}\n`);
-      // Send handshake
-      primarySocket.write(JSON.stringify({ type: "client_hello" }) + "\n");
     });
+    // Queue the handshake immediately so it always precedes any request written before the connect completes.
+    primarySocket.write(JSON.stringify({ type: "client_hello" }) + "\n");
 
     primarySocket.on("data", (chunk) => {
       clientBuffer = Buffer.concat([clientBuffer, chunk]);
