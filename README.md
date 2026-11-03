@@ -116,6 +116,19 @@ news, social) plus your own domains. Everything is off by default. When on, tool
   `claude-in-firefox-<version>-unsigned.xpi` (or the signed `claude-in-firefox-<version>.xpi` when the `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` secrets exist)
   and `claude-in-firefox-<version>.mcpb`, and attaches them to the GitHub release.
 
+## Testing
+
+The hub and the blocklist have automated tests (`host/test/`, Node's built-in test runner, 25 tests). They start a real hub process on free ports and play the
+browser and the MCP client, covering JWT authentication (valid, expired, replayed, wrong key or audience, bad Origin), key enrollment through the pending list,
+routing between several browsers, the key store, live settings and the domain blocklist.
+
+```bash
+docker run --rm -v "$PWD:/repo" -w /repo/host node:22-alpine sh -c "npm ci && npm test"
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs them on every push to `main` and `develop` and on pull requests, together with lint and validation
+(extension, bundle manifest, compose file, workflows) and a build of the XPI, the bundle and the hub image. The release workflow only builds and publishes.
+
 ## Updating after code changes
 
 | What changed | What to do |
@@ -130,7 +143,7 @@ news, social) plus your own domains. Everything is off by default. When on, tool
 | Path | What it is |
 |------|------------|
 | `extension/` | The browser extension (Manifest V3): connection, tools, blocklist, options page |
-| `host/` | Hub image sources: MCP server, WebSocket bridge, key store, settings, TUI (`ocf-tui`) |
+| `host/` | Hub image sources: MCP server, WebSocket bridge, key store, settings, TUI (`ocf-tui`), and its tests (`host/test/`) |
 | `certs/` | Local CA and leaf certificate generator for Traefik |
 | `mcpb/` | Claude Desktop extension bundle (on/off toggle) |
 | `skill/` | `firefox-browser` usage skill for Claude |
