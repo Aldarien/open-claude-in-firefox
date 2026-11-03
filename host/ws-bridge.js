@@ -1,13 +1,16 @@
 // WebSocket bridge: lets the browser extension connect to the hub over wss (TLS terminated by Traefik).
 // The extension authenticates with an ES256 JWT sent in the Sec-WebSocket-Protocol header
 // (subprotocols: "ocf.v1", "<jwt>"), verified against a local JWKS file before the upgrade completes.
-// The Origin must also be a moz-extension:// origin.
+// The Origin must also match the configured prefixes (moz-extension:// by default).
+// Unknown keys that prove possession of their private key are queued for approval in the TUI.
 
 import http from "node:http";
 import fs from "node:fs";
 import { EventEmitter } from "node:events";
 import { WebSocketServer } from "ws";
-import { createLocalJWKSet, decodeProtectedHeader, jwtVerify } from "jose";
+import { calculateJwkThumbprint, createLocalJWKSet, decodeProtectedHeader, importJWK, jwtVerify } from "jose";
+import { getConfig } from "./config.js";
+import { addPending, sanitizeJwk } from "./keystore.js";
 
 const PROTOCOL = "ocf.v1";
 const seenJti = new Map(); // jti -> expiry ms
@@ -20,18 +23,30 @@ function rememberJti(jti, expMs) {
   return true;
 }
 
-async function verifyToken(token, { jwksPath, audience, issuer }) {
+async function verifyToken(token, { jwksPath, audience, issuer, origin }) {
   const jwks = JSON.parse(fs.readFileSync(jwksPath, "utf-8"));
-  const { kid } = decodeProtectedHeader(token);
-  const entry = (jwks.keys || []).find((k) => k.kid === kid);
-  if (!entry) throw new Error("unknown key");
-  const { payload } = await jwtVerify(token, createLocalJWKSet(jwks), {
+  const header = decodeProtectedHeader(token);
+  const { kid } = header;
+  const verifyOpts = {
     algorithms: ["ES256"],
     audience,
     issuer,
-    maxTokenAge: "60s",
+    maxTokenAge: `${getConfig().tokenMaxAgeSeconds}s`,
     requiredClaims: ["exp", "iat", "jti"],
-  });
+  };
+  const entry = (jwks.keys || []).find((k) => k.kid === kid);
+  if (!entry) {
+    // Unknown key. If it carries its own public key (kid must be that key's thumbprint) and the token is
+    // signed with it, remember it as pending so a human can approve it in the TUI. The connection is still refused.
+    const pub = sanitizeJwk(header.jwk);
+    if (pub && typeof kid === "string" && (await calculateJwkThumbprint(pub)) === kid) {
+      await jwtVerify(token, await importJWK({ ...pub, alg: "ES256" }, "ES256"), verifyOpts);
+      addPending({ kid, jwk: pub, label: header.label, origin });
+      throw new Error("pending approval");
+    }
+    throw new Error("unknown key");
+  }
+  const { payload } = await jwtVerify(token, createLocalJWKSet(jwks), verifyOpts);
   if (!rememberJti(payload.jti, payload.exp * 1000 + 60000)) throw new Error("token replayed");
   return { kid, label: entry.label || kid.slice(0, 8) };
 }
@@ -73,14 +88,15 @@ export function startWsBridge({ port, host, jwksPath, audience, issuer, onBrowse
     };
     try {
       if (new URL(req.url, "http://x").pathname !== "/ws") return reject(404, "Not Found");
-      if (!String(req.headers.origin || "").startsWith("moz-extension://")) return reject(403, "Bad Origin");
+      const origin = String(req.headers.origin || "");
+      if (!getConfig().allowedOriginPrefixes.some((p) => origin.startsWith(p))) return reject(403, "Bad Origin");
       const protocols = String(req.headers["sec-websocket-protocol"] || "").split(",").map((s) => s.trim());
       const token = protocols.find((p) => p && p !== PROTOCOL);
       if (!protocols.includes(PROTOCOL) || !token) return reject(401, "Missing token");
-      info = await verifyToken(token, { jwksPath, audience, issuer });
-      info.origin = req.headers.origin;
+      info = await verifyToken(token, { jwksPath, audience, issuer, origin });
+      info.origin = origin;
     } catch (e) {
-      return reject(401, "Unauthorized");
+      return reject(401, e.message === "pending approval" ? "Pending approval" : "Unauthorized");
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
       ws.isAlive = true;

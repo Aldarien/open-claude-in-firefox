@@ -17,6 +17,7 @@ import path from "node:path";
 import os from "node:os";
 import { z } from "zod";
 import { startWsBridge } from "./ws-bridge.js";
+import { getConfig } from "./config.js";
 
 
 const DEFAULT_PORT = 18765;
@@ -108,8 +109,8 @@ function sendToExtension(tool, args) {
     const id = String(++requestIdCounter);
     const timer = setTimeout(() => {
       pendingRequests.delete(id);
-      reject(new Error("Tool request timed out after 60s"));
-    }, 60000);
+      reject(new Error("Tool request timed out"));
+    }, getConfig().requestTimeoutSeconds * 1000);
     pendingRequests.set(id, { resolve, reject, timer, tool, args, resent: false, kid: null });
 
     if (mode === "primary") {
@@ -229,7 +230,7 @@ const tcpServer = net.createServer((socket) => {
   const classifyTimeout = setTimeout(() => {
     if (!classified) {
       classified = true;
-      setupNativeHostConnection(socket, earlyBuffer);
+      socket.destroy(); // no client_hello: not an MCP client (browsers connect through the WS bridge)
     }
   }, 500); // 500ms is plenty for a local client_hello
 
@@ -251,11 +252,10 @@ const tcpServer = net.createServer((socket) => {
       }
     } catch {}
 
-    // Got data but it's not a client_hello, this is a native host
+    // Got data but it's not a client_hello: refuse
     classified = true;
     clearTimeout(classifyTimeout);
-    socket.removeListener("data", onEarlyData);
-    setupNativeHostConnection(socket, earlyBuffer);
+    socket.destroy();
   });
 });
 
@@ -324,7 +324,7 @@ function setupNativeHostConnection(socket, initialBuffer, info = { kid: "legacy"
         clientRequestMap.delete(prefixedId);
         if (cs && !cs.destroyed) cs.write(JSON.stringify({ id: e.originalId, type: "tool_error", error: `Browser "${label}" disconnected` }) + "\n");
       }
-    }, 5000);
+    }, getConfig().reconnectGraceSeconds * 1000);
   });
 }
 
@@ -485,7 +485,8 @@ async function start() {
       }
     });
 
-    tcpServer.listen(TCP_PORT, process.env.OCF_BIND_HOST || "127.0.0.1", () => {
+    // Internal client port (docker exec MCP clients, TUI): loopback only. Browsers use the authenticated WS bridge.
+    tcpServer.listen(TCP_PORT, "127.0.0.1", () => {
       mode = "primary";
       writePidfile();
       process.stderr.write(`Primary MCP server listening on :${TCP_PORT}\n`);
