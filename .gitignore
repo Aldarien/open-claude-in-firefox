@@ -13,3 +13,4 @@ data/ca/
 certs/*.srl
 data/pending.json
 data/config.json
+*.mcpb

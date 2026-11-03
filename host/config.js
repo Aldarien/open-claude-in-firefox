@@ -4,7 +4,7 @@
 import fs from "node:fs";
 
 export const DEFAULTS = {
-  tokenMaxAgeSeconds: 60,
+  tokenMaxAgeSeconds: 120,
   requestTimeoutSeconds: 60,
   reconnectGraceSeconds: 5,
   allowedOriginPrefixes: ["moz-extension://"],

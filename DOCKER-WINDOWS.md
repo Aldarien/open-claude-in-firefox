@@ -9,9 +9,10 @@ No native messaging and no registry changes: the extension connects to the hub o
   watched dynamic directory (no restart; it is only served for SNI `ocf.localhost`, other hosts keep their own certificates) and keeps the CA key in
   `data/ca` (git-ignored). Import `certs/ocf-hub-ca.crt` once in each browser (Settings > Privacy & Security > View Certificates > Authorities > Import,
   "Trust this CA to identify websites"). The leaf is valid 730 days; rerun the script to renew.
+- Note: Firefox delays WebSocket reconnects to a host after failures (`network.websocket.delay-failed-reconnects`, up to ~60 s), so tokens live 120 s; replay is still blocked by the one-time `jti`.
 - Auth: the extension generates an ES256 key pair (private key non-extractable, in IndexedDB). Copy its public JWK from the options
   page into `data/jwks.json` (`{"keys":[ ... ]}`; re-read on every connection, no restart needed). It then connects with
-  `new WebSocket(url, ["ocf.v1", <JWT>])`; the hub verifies the JWT (ES256, `iss`/`aud`, 30 s `exp`, one-time `jti`) from the
+  `new WebSocket(url, ["ocf.v1", <JWT>])`; the hub verifies the JWT (ES256, `iss`/`aud`, 120 s `exp`, one-time `jti`) from the
   `Sec-WebSocket-Protocol` header before the upgrade, and requires a `moz-extension://` Origin.
 - Claude Desktop / Code MCP entry: command `docker`, args `["exec","-i","ocf-hub","node","/app/mcp-server.js"]`.
 - Extension build: `docker run --rm -v "$PWD:/src" -w /src node:22-alpine npx --yes web-ext@8 build -s extension -a dist`; rename the zip to `.xpi`.
