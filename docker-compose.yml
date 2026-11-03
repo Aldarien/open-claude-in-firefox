@@ -1,0 +1,27 @@
+# Hub: the primary MCP server, kept running with stdin open. No host ports are published.
+# - Claude connects with `docker exec -i ocf-hub node /app/mcp-server.js` (runs as a client of this hub).
+# - Firefox's native host (windows/native-host.bat) reaches the hub through the global Traefik proxy:
+#   TCP router on `websecure`, matched by SNI `ocf.localhost`, TLS terminated by Traefik.
+services:
+  hub:
+    build: ./host
+    image: ocf-host
+    container_name: ocf-hub
+    command: ["node", "/app/mcp-server.js"]
+    stdin_open: true
+    restart: unless-stopped
+    environment:
+      OCF_BIND_HOST: "0.0.0.0"
+    networks:
+      - global-proxy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: global-proxy
+      traefik.tcp.routers.ocf-hub.rule: "HostSNI(`ocf.localhost`)"
+      traefik.tcp.routers.ocf-hub.entrypoints: websecure
+      traefik.tcp.routers.ocf-hub.tls: "true"
+      traefik.tcp.services.ocf-hub.loadbalancer.server.port: "18765"
+
+networks:
+  global-proxy:
+    external: true
