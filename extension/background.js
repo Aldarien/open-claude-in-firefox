@@ -27,6 +27,19 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // --- Hub connection (WebSocket over wss, authenticated with a signed JWT in the subprotocol header) ---
 let hubSocket = null;
 let connecting = false;
+let reconnectNow = false;
+
+// Reconnect immediately when the hub URL is changed in the options page.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes.hubUrl) return;
+  if (changes.hubUrl.newValue === changes.hubUrl.oldValue) return;
+  if (hubSocket) {
+    reconnectNow = true;
+    try { hubSocket.close(); } catch {}
+  } else {
+    connectNativeHost();
+  }
+});
 
 async function setConnState(state) {
   try { await chrome.storage.local.set({ connState: { ...state, at: Date.now() } }); } catch {}
@@ -59,7 +72,9 @@ async function connectNativeHost() {
       hubSocket = null;
       if (!wasOpen) setConnState({ connected: false, url, error: "Could not connect (hub down, certificate not trusted, or key not in the hub's JWKS)" });
       else setConnState({ connected: false, url });
-      setTimeout(connectNativeHost, 3000);
+      const delay = reconnectNow ? 0 : 3000;
+      reconnectNow = false;
+      setTimeout(connectNativeHost, delay);
     };
     ws.onerror = () => {};
   } catch (e) {

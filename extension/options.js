@@ -4,8 +4,16 @@
   const httpsUrl = () => urlInput.value.replace(/^wss:/, "https:").replace(/\/ws$/, "/");
   document.getElementById("trust").href = httpsUrl();
   document.getElementById("saveUrl").addEventListener("click", async () => {
-    await chrome.storage.local.set({ hubUrl: urlInput.value.trim() });
+    const next = urlInput.value.trim();
+    const note = document.getElementById("urlNote");
+    if (next === (await getHubUrl())) {
+      note.textContent = "No change";
+    } else {
+      await chrome.storage.local.set({ hubUrl: next });
+      note.textContent = "Saved, reconnecting…";
+    }
     document.getElementById("trust").href = httpsUrl();
+    setTimeout(() => (note.textContent = ""), 2000);
   });
   const { publicJwk } = await getIdentity();
   const jwkText = JSON.stringify(publicJwk, null, 2);
