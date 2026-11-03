@@ -9,8 +9,8 @@
 </p>
 
 A fork of [beto621/open-claude-in-firefox](https://github.com/beto621/open-claude-in-firefox), itself a Firefox port of
-[open-claude-in-chrome](https://github.com/noemica-io/open-claude-in-chrome) (MIT). It gives Claude (Claude Desktop or Claude Code) the same
-browser tools as Claude in Chrome, driving your real browser with your real sign-ins.
+[open-claude-in-chrome](https://github.com/noemica-io/open-claude-in-chrome). It gives Claude (Claude Desktop or Claude Code) the same
+browser tools as Claude in Chrome, driving your real browser with your real sign-ins. See [License](#license) for the licensing of this code and its upstreams.
 
 ## What's different in this fork
 
@@ -116,9 +116,14 @@ news, social) plus your own domains. Everything is off by default. When on, tool
 ## Repository layout
 
 `extension/` browser extension, `host/` hub image sources, `certs/` CA and leaf generator, `mcpb/` Claude Desktop bundle, `skill/` usage skill,
-`docker-compose.yml`, `MCP-SETUP.md` (setup guide), `DOCKER-WINDOWS.md` (design notes).
+`docker-compose.yml`, `MCP-SETUP.md` (setup guide, authentication details and troubleshooting), `LICENSE`.
 
-## Credits and license
+## License
 
-Built on the work of [beto621](https://github.com/beto621/open-claude-in-firefox) and [noemica-io](https://github.com/noemica-io/open-claude-in-chrome), both MIT.
+This repository is released under the [MIT License](LICENSE).
+
+Upstream notes: the Firefox port this fork starts from ([beto621/open-claude-in-firefox](https://github.com/beto621/open-claude-in-firefox)) declares MIT in its README but
+ships no license file. That port is based on [noemica-io/open-claude-in-chrome](https://github.com/noemica-io/open-claude-in-chrome), which is published under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0). If you plan commercial use or redistribution, check those upstream terms yourself.
+
 This is an independent project and is not affiliated with Anthropic. "Claude" is a trademark of Anthropic.
