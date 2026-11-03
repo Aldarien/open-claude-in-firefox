@@ -1,4 +1,27 @@
 (async () => {
+  const urlInput = document.getElementById("hubUrl");
+  urlInput.value = await getHubUrl();
+  const httpsUrl = () => urlInput.value.replace(/^wss:/, "https:").replace(/\/ws$/, "/");
+  document.getElementById("trust").href = httpsUrl();
+  document.getElementById("saveUrl").addEventListener("click", async () => {
+    await chrome.storage.local.set({ hubUrl: urlInput.value.trim() });
+    document.getElementById("trust").href = httpsUrl();
+  });
+  const { publicJwk } = await getIdentity();
+  const jwkText = JSON.stringify(publicJwk, null, 2);
+  document.getElementById("jwk").value = jwkText;
+  document.getElementById("copy").addEventListener("click", () => navigator.clipboard.writeText(jwkText));
+  const showState = async () => {
+    const { connState } = await chrome.storage.local.get("connState");
+    const el = document.getElementById("conn");
+    if (!connState) el.textContent = "Not connected yet.";
+    else if (connState.connected) el.textContent = "Connected to " + connState.url;
+    else el.textContent = "Disconnected." + (connState.error ? " " + connState.error : "");
+  };
+  showState();
+  chrome.storage.onChanged.addListener(showState);
+})();
+(async () => {
   const s = await loadBlocklistSettings();
   const wrap = document.getElementById("cats");
   for (const [key, cat] of Object.entries(BLOCKLIST_CATEGORIES)) {

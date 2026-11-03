@@ -1,7 +1,0 @@
-{
-  "name": "com.anthropic.open_claude_in_firefox",
-  "description": "Open Claude in Firefox Native Messaging Host (Docker)",
-  "path": "__NATIVE_HOST_BAT__",
-  "type": "stdio",
-  "allowed_extensions": ["open-claude-in-firefox@anthropic"]
-}
