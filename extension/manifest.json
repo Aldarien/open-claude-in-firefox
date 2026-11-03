@@ -8,7 +8,9 @@
       "id": "open-claude-in-firefox@anthropic",
       "strict_min_version": "109.0",
       "data_collection_permissions": {
-        "required": ["none"],
+        "required": [
+          "none"
+        ],
         "optional": []
       }
     }
@@ -17,7 +19,6 @@
     "tabs",
     "activeTab",
     "scripting",
-    "nativeMessaging",
     "storage",
     "alarms",
     "webRequest"
@@ -25,13 +26,25 @@
   "host_permissions": [
     "<all_urls>"
   ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "blocklist.js",
+      "auth.js",
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }

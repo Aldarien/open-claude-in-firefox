@@ -5,7 +5,6 @@ self.addEventListener("unhandledrejection", (event) => {
   event.preventDefault();
 });
 
-const NATIVE_HOST_NAME = "com.anthropic.open_claude_in_firefox";
 const MCP_WINDOW_STORAGE_KEY = "mcpWindowId";
 
 // --- State ---
@@ -25,26 +24,64 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// --- Native messaging ---
-function connectNativeHost() {
-  if (nativePort) return;
-  try {
-    nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+// --- Hub connection (WebSocket over wss, authenticated with a signed JWT in the subprotocol header) ---
+let hubSocket = null;
+let connecting = false;
+let reconnectNow = false;
 
-    nativePort.onMessage.addListener((msg) => {
+// Reconnect immediately when the hub URL is changed in the options page.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes.hubUrl) return;
+  if (changes.hubUrl.newValue === changes.hubUrl.oldValue) return;
+  if (hubSocket) {
+    reconnectNow = true;
+    try { hubSocket.close(); } catch {}
+  } else {
+    connectNativeHost();
+  }
+});
+
+async function setConnState(state) {
+  try { await chrome.storage.local.set({ connState: { ...state, at: Date.now() } }); } catch {}
+}
+
+async function connectNativeHost() {
+  if (nativePort || connecting || hubSocket) return;
+  connecting = true;
+  try {
+    const url = await getHubUrl();
+    const token = await createToken();
+    const ws = new WebSocket(url, ["ocf.v1", token]);
+    hubSocket = ws;
+    ws.onopen = () => {
+      connecting = false;
+      nativePort = { postMessage: (obj) => ws.send(JSON.stringify(obj)) };
+      setConnState({ connected: true, url });
+    };
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === "tool_request" && msg.id) {
         handleToolRequest(msg.id, msg.tool, msg.args || {});
       }
-    });
-
-    nativePort.onDisconnect.addListener(() => {
-      const err = chrome.runtime.lastError;
+    };
+    ws.onclose = () => {
+      const wasOpen = nativePort !== null;
+      connecting = false;
       nativePort = null;
-      setTimeout(connectNativeHost, 2000);
-    });
+      hubSocket = null;
+      if (!wasOpen) setConnState({ connected: false, url, error: "Could not connect (hub down, certificate not trusted, or key not in the hub's JWKS)" });
+      else setConnState({ connected: false, url });
+      const delay = reconnectNow ? 0 : 3000;
+      reconnectNow = false;
+      setTimeout(connectNativeHost, delay);
+    };
+    ws.onerror = () => {};
   } catch (e) {
+    connecting = false;
     nativePort = null;
-    setTimeout(connectNativeHost, 2000);
+    setConnState({ connected: false, error: String(e) });
+    setTimeout(connectNativeHost, 3000);
   }
 }
 
@@ -893,6 +930,22 @@ const toolHandlers = {
   },
 };
 
+// --- Optional domain blocklist guard ---
+async function checkBlocked(tool, args) {
+  const settings = await loadBlocklistSettings();
+  if (!settings.enabledCategories.length && !(settings.customDomains || []).length) return null;
+  const urls = [];
+  if (tool === "navigate" && args.url && args.url !== "back" && args.url !== "forward") urls.push(args.url);
+  if (typeof args.tabId === "number") {
+    try { urls.push((await chrome.tabs.get(args.tabId)).url || ""); } catch {}
+  }
+  for (const u of urls) {
+    const hit = u && matchBlocked(u, settings);
+    if (hit) return `Blocked by the extension's domain blocklist (${hit}): ${u}. Change it in the extension options.`;
+  }
+  return null;
+}
+
 // --- Tool dispatch ---
 async function handleToolRequest(id, tool, args) {
   const handler = toolHandlers[tool];
@@ -902,6 +955,11 @@ async function handleToolRequest(id, tool, args) {
   }
 
   try {
+    const blocked = await checkBlocked(tool, args);
+    if (blocked) {
+      sendResponse(id, { content: [{ type: "text", text: blocked }] });
+      return;
+    }
     const result = await handler(args);
     sendResponse(id, result);
   } catch (err) {

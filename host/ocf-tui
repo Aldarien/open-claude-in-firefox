@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Launcher for the hub TUI inside the container:  docker exec -it ocf-hub ocf-tui
+set -euo pipefail
+
+export TERM="${TERM:-xterm-256color}"
+
+if ! hub_up=$(node -e '
+  const s = require("net").connect(Number(process.env.OCF_PORT || 18765), "127.0.0.1");
+  s.on("connect", () => { console.log("yes"); s.destroy(); });
+  s.on("error", () => console.log("no"));
+  setTimeout(() => process.exit(0), 1500);
+' 2>/dev/null); then hub_up=no; fi
+if [ "${hub_up}" != "yes" ]; then
+  echo "Note: the hub process is not answering on 127.0.0.1:${OCF_PORT:-18765}; status will show it as unreachable." >&2
+fi
+
+exec node /app/tui.js "$@"
