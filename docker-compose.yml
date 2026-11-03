@@ -1,7 +1,8 @@
 # Hub: the primary MCP server, kept running with stdin open. No host ports are published.
 # - Claude connects with `docker exec -i ocf-hub node /app/mcp-server.js` (runs as a client of this hub).
-# - Firefox's native host (windows/native-host.bat) reaches the hub through the global Traefik proxy:
-#   TCP router on `websecure`, matched by SNI `ocf.localhost`, TLS terminated by Traefik.
+# - The browser extension connects over wss://ocf.localhost/ws through the global Traefik proxy
+#   (HTTP router on `websecure`, TLS with Traefik's own certificate). It authenticates with an ES256 JWT
+#   in the Sec-WebSocket-Protocol header, checked against data/jwks.json.
 services:
   hub:
     build: ./host
@@ -12,15 +13,18 @@ services:
     restart: unless-stopped
     environment:
       OCF_BIND_HOST: "0.0.0.0"
+      OCF_JWKS: /data/jwks.json
+    volumes:
+      - ./data:/data:ro
     networks:
       - global-proxy
     labels:
       traefik.enable: "true"
       traefik.docker.network: global-proxy
-      traefik.tcp.routers.ocf-hub.rule: "HostSNI(`ocf.localhost`)"
-      traefik.tcp.routers.ocf-hub.entrypoints: websecure
-      traefik.tcp.routers.ocf-hub.tls: "true"
-      traefik.tcp.services.ocf-hub.loadbalancer.server.port: "18765"
+      traefik.http.routers.ocf-hub.rule: "Host(`ocf.localhost`)"
+      traefik.http.routers.ocf-hub.entrypoints: websecure
+      traefik.http.routers.ocf-hub.tls: "true"
+      traefik.http.services.ocf-hub.loadbalancer.server.port: "18766"
 
 networks:
   global-proxy:
