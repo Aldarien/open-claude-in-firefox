@@ -9,3 +9,5 @@ host/com.anthropic.open_claude_in_firefox.json
 .DS_Store
 windows/com.anthropic.open_claude_in_firefox.json
 data/jwks.json
+data/ca/
+certs/*.srl
