@@ -77,7 +77,7 @@ then open the `.xpi` (about:addons > gear > Install Add-on From File). Otherwise
 1. Open the extension options. Set the browser name, check the status pill, and note the fingerprint.
 2. Run the hub TUI and approve:
    ```bash
-   docker exec -it ocf-hub node /app/tui.js
+   docker exec -it ocf-hub ocf-tui
    ```
    Open **Pending approvals**, match the fingerprint, press `a 1`, confirm the label. The extension connects on its next retry (a few seconds).
 3. Repeat for each browser profile (LibreWolf, Firefox Dev, ...).

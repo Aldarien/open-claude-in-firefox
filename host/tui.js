@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Terminal UI for the hub: status, authorized keys, pending key approvals, settings.
-// Run:  docker exec -it ocf-hub node /app/tui.js
+// Run:  docker exec -it ocf-hub ocf-tui
 // Key enrollment is deliberately only possible here (a human at a terminal), never through MCP tools.
 
 import net from "node:net";
