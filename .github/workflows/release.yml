@@ -75,8 +75,12 @@ jobs:
       - name: Create or update the GitHub release
         run: |
           git log -1 --format=%B "refs/tags/${TAG}" > notes.md
+          # Only the highest version tag is marked "Latest", so re-running an old tag cannot take the badge.
+          HIGHEST=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          if [ "$TAG" = "$HIGHEST" ]; then LATEST="--latest"; else LATEST="--latest=false"; fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" "$LATEST"
           else
-            gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md
+            gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md "$LATEST"
           fi
