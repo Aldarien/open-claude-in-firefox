@@ -1,8 +1,17 @@
-# Docker / Windows setup (local modifications)
+# Docker / Traefik setup (local modifications)
 
-- `docker compose up -d --build` runs the hub (`ocf-hub`) on the `global-proxy` network; no host ports are published. Traefik routes it via a TCP router on `websecure` (SNI `ocf.localhost`, TLS terminated by Traefik).
-- `windows/install-native-host.ps1` registers the native host (registry, current user; see note for LibreWolf) and starts the hub. The host bridge runs in Docker via `windows/native-host.bat` (image `ocf-host`, network `global-proxy`).
+No native messaging and no registry changes: the extension connects to the hub over a WebSocket.
+
+- `docker compose up -d --build` runs the hub (`ocf-hub`) on the external `global-proxy` network; no host ports are published.
+  Traefik routes `https://ocf.localhost` (HTTP router on `websecure`) to the hub's WebSocket bridge (port 18766).
+- TLS: Traefik's own generated self-signed certificate. Firefox/LibreWolf cannot be told to trust a certificate by an extension,
+  so open the extension options and use "Trust the hub certificate" once (accept the warning). Traefik regenerates that
+  certificate when it restarts, so you may need to accept it again; a persistent certificate in Traefik's dynamic config avoids that.
+- Auth: the extension generates an ES256 key pair (private key non-extractable, in IndexedDB). Copy its public JWK from the options
+  page into `data/jwks.json` (`{"keys":[ ... ]}`; re-read on every connection, no restart needed). It then connects with
+  `new WebSocket(url, ["ocf.v1", <JWT>])`; the hub verifies the JWT (ES256, `iss`/`aud`, 30 s `exp`, one-time `jti`) from the
+  `Sec-WebSocket-Protocol` header before the upgrade, and requires a `moz-extension://` Origin.
 - Claude Desktop / Code MCP entry: command `docker`, args `["exec","-i","ocf-hub","node","/app/mcp-server.js"]`.
-- Extension: build with `docker run --rm -v "$PWD:/src" -w /src node:22-alpine npx --yes web-ext@8 build -s extension -a dist`; rename the zip to `.xpi`.
-- Blocklist: extension options page (about:addons > Claude MCP > Preferences). Categories are off by default; custom domains supported.
-- Release Firefox only installs signed add-ons. Either sign it (AMO unlisted, `web-ext sign` with API keys), or use Firefox Developer Edition/Nightly/ESR/LibreWolf with `xpinstall.signatures.required=false`.
+- Extension build: `docker run --rm -v "$PWD:/src" -w /src node:22-alpine npx --yes web-ext@8 build -s extension -a dist`; rename the zip to `.xpi`.
+- Blocklist: extension options page. Categories are off by default; custom domains supported.
+- Release Firefox only installs signed add-ons. LibreWolf: try `xpinstall.signatures.required=false`, or sign via AMO unlisted (`web-ext sign`).
