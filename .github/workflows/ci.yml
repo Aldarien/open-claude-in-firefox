@@ -1,0 +1,77 @@
+name: ci
+
+# Runs on every push to main and develop, and on pull requests targeting them:
+# hub tests, lint/validation, and a build of the extension, the Claude Desktop bundle and the hub image.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: hub and blocklist tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: host/package-lock.json
+      - name: Install hub dependencies
+        working-directory: host
+        run: npm ci
+      - name: Run tests
+        working-directory: host
+        run: npm test
+
+  lint:
+    name: lint and validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Extension and bundle versions match
+        run: |
+          EXT=$(node -p "require('./extension/manifest.json').version")
+          MCPB=$(node -p "require('./mcpb/manifest.json').version")
+          echo "extension $EXT, bundle $MCPB"
+          [ "$EXT" = "$MCPB" ]
+      - name: Lint the extension
+        run: npx --yes web-ext@8 lint -s extension
+      - name: Validate the Claude Desktop bundle manifest
+        run: npx --yes @anthropic-ai/mcpb validate mcpb/manifest.json
+      - name: Check the TUI launcher syntax
+        run: bash -n host/ocf-tui
+      - name: Validate docker-compose.yml
+        run: docker compose -f docker-compose.yml config --quiet
+      - name: Lint GitHub workflows
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Build the XPI
+        run: npx --yes web-ext@8 build -s extension -a build --overwrite-dest
+      - name: Pack the Claude Desktop bundle
+        run: npx --yes @anthropic-ai/mcpb pack mcpb build/claude-in-firefox.mcpb
+      - name: Build the hub image
+        run: docker build -t ocf-host host
+      - name: Smoke-test the hub image (TUI launcher starts and exits)
+        run: echo q | docker run -i --rm ocf-host ocf-tui | grep -q "Open Claude in Firefox"
