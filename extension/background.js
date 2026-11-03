@@ -893,6 +893,22 @@ const toolHandlers = {
   },
 };
 
+// --- Optional domain blocklist guard ---
+async function checkBlocked(tool, args) {
+  const settings = await loadBlocklistSettings();
+  if (!settings.enabledCategories.length && !(settings.customDomains || []).length) return null;
+  const urls = [];
+  if (tool === "navigate" && args.url && args.url !== "back" && args.url !== "forward") urls.push(args.url);
+  if (typeof args.tabId === "number") {
+    try { urls.push((await chrome.tabs.get(args.tabId)).url || ""); } catch {}
+  }
+  for (const u of urls) {
+    const hit = u && matchBlocked(u, settings);
+    if (hit) return `Blocked by the extension's domain blocklist (${hit}): ${u}. Change it in the extension options.`;
+  }
+  return null;
+}
+
 // --- Tool dispatch ---
 async function handleToolRequest(id, tool, args) {
   const handler = toolHandlers[tool];
@@ -902,6 +918,11 @@ async function handleToolRequest(id, tool, args) {
   }
 
   try {
+    const blocked = await checkBlocked(tool, args);
+    if (blocked) {
+      sendResponse(id, { content: [{ type: "text", text: blocked }] });
+      return;
+    }
     const result = await handler(args);
     sendResponse(id, result);
   } catch (err) {
