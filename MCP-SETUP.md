@@ -98,6 +98,31 @@ Environment (container; restart needed): `OCF_BIND_HOST` (default `127.0.0.1`; c
 `reconnectGraceSeconds` (5), `allowedOriginPrefixes` (`["moz-extension://"]`), `maxPendingKeys` (20), `pendingTtlHours` (168).
 Files in `data/`: `jwks.json` (authorized keys, each with a `label`), `pending.json` (keys awaiting approval), `config.json`, `ca/` (CA key).
 
+## Authentication details
+- The extension generates an ES256 key pair (the private key is non-extractable and kept in IndexedDB). It connects with
+  `new WebSocket(url, ["ocf.v1", <JWT>])`: the token travels in the `Sec-WebSocket-Protocol` header, the only header a browser WebSocket lets you set.
+- The hub verifies the JWT before the upgrade completes: ES256, `iss` and `aud`, a 120 s `exp`, a one-time `jti`, and a key id (`kid`) listed in `data/jwks.json`.
+  The WebSocket `Origin` must also match `allowedOriginPrefixes` (`moz-extension://` by default).
+- `data/jwks.json` is re-read on every connection, so keys can be added or removed without restarting the hub.
+- Unknown keys are not trusted: if the token carries its own public key (and `kid` is that key's thumbprint) and is signed with it, the hub queues it in
+  `data/pending.json` and still refuses the connection until a person approves it in `ocf-tui`.
+- Manual enrollment (no TUI): copy the public key from the extension options page into `data/jwks.json` under `"keys": [ ... ]`.
+  Each entry looks like `{"kty":"EC","crv":"P-256","x":"…","y":"…","kid":"…","alg":"ES256","use":"sig","label":"librewolf"}`.
+
+## Multiple browsers
+Each browser profile has its own key and a `label` (set it in the extension options and when approving). With one browser connected it is used automatically.
+With several connected, call `list_connected_browsers` and then `select_browser` with a label or id; the selection is per MCP client, and tab IDs are specific
+to each browser. A second connection with the same key is refused.
+
+## Notes and troubleshooting
+- Firefox delays WebSocket reconnects to a host after failures (`network.websocket.delay-failed-reconnects`, up to about a minute), so tokens live 120 s.
+  Replay is still blocked by the one-time `jti`.
+- `docker logs ocf-hub` shows why a browser was rejected (reason, token timing, source). Typical causes: the key is not approved, the CA is not imported in the
+  browser, or the hub URL in the extension options is wrong.
+- Traefik serves the `ocf.localhost` certificate only for that name; other hosts keep their own certificates. The leaf is valid 730 days; rerun
+  `certs/generate.sh` to renew.
+- Release Firefox only installs signed add-ons. In LibreWolf try `xpinstall.signatures.required=false`, or sign the XPI through addons.mozilla.org (unlisted).
+
 ## Code map
 - `host/mcp-server.js`: MCP server and hub (browser registry, per-client selection, routing, timeouts).
 - `host/ws-bridge.js`: wss endpoint, JWT verification (jose), Origin check, pending-key capture.
@@ -112,3 +137,13 @@ Files in `data/`: `jwks.json` (authorized keys, each with a `label`), `pending.j
   Install by opening the `.mcpb` in Claude Desktop (Settings > Extensions); it can then be switched on/off there.
   Use either this extension or a `claude mcp add` entry for the same server, not both.
 - `skill/firefox-browser/SKILL.md` tells Claude how to use the tools; copy it to `~/.claude/skills/firefox-browser/`.
+
+## Releases (GitHub Actions)
+`.github/workflows/release.yml` builds the extension and the Claude Desktop bundle and attaches them to the GitHub release.
+- Push a tag `vX.Y.Z` (the tag must match `extension/manifest.json` and `mcpb/manifest.json`), or run the workflow by hand with an existing tag
+  (Actions > release > Run workflow; the workflow file must be on `main`).
+- Release notes are the tag commit's message (the squashed "Release X.Y.Z" commit).
+- File names: `claude-in-firefox-<version>-unsigned.xpi` when built without signing credentials (needs `xpinstall.signatures.required=false`
+  in LibreWolf/Developer Edition). With repo secrets `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET` (addons.mozilla.org) the workflow signs it
+  (unlisted channel) and attaches `claude-in-firefox-<version>.xpi` instead, which installs permanently in regular Firefox.
+  The bundle is always `claude-in-firefox-<version>.mcpb`.

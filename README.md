@@ -1,315 +1,129 @@
 <p align="center">
-  <img src="extension/icons/icon128.png" width="96" alt="Open Claude in Firefox">
+  <img src="extension/icons/icon128.png" width="96" alt="Claude in Firefox">
 </p>
 
-<h1 align="center">Open Claude in Firefox</h1>
+<h1 align="center">Claude in Firefox</h1>
 
 <p align="center">
-  <em>Official Claude in Chrome gives you 58 blocked domains and two browsers.<br/>
-  <strong>Open Claude in Firefox gives you the whole web — in Firefox.</strong></em>
-  <br/>
-  <sub>Firefox port of the open-source Claude browser automation extension. No blocklist. Full MCP tool parity.</sub>
+  <em>Browser automation for Claude in your own Firefox or LibreWolf, through a local Docker hub.</em>
 </p>
 
-<p align="center">
-  <a href="#whats-different">What's different</a> ·
-  <a href="#installation">Install</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#firefox-notes">Firefox notes</a>
-</p>
+A fork of [beto621/open-claude-in-firefox](https://github.com/beto621/open-claude-in-firefox), itself a Firefox port of
+[open-claude-in-chrome](https://github.com/noemica-io/open-claude-in-chrome). It gives Claude (Claude Desktop or Claude Code) the same
+browser tools as Claude in Chrome, driving your real browser with your real sign-ins. See [License](#license) for the licensing of this code and its upstreams.
 
----
+## What's different in this fork
 
-This is a Firefox port of [open-claude-in-chrome](https://github.com/noemica-io/open-claude-in-chrome), a clean-room reimplementation of Anthropic's [Claude in Chrome](https://code.claude.com/docs/en/chrome) extension. It gives Claude Code (and Claude Desktop) full browser automation via 18 MCP tools, without any domain restrictions, running in Firefox instead of Chromium.
-
-## What's Different
-
-| | Claude in Chrome (official) | Open Claude in Firefox |
+| | Upstream | This fork |
 |---|---|---|
-| **Domain blocklist** | 58 blocked domains across 11 categories | No blocklist. Navigate anywhere. |
-| **Browser** | Chrome and Edge only | Firefox |
-| **Source code** | Closed source | Open source (MIT) |
-| **Tools** | 18 MCP tools | Same 18 MCP tools |
-| **Automation method** | Chrome DevTools Protocol (CDP) | Firefox WebExtension APIs |
-
-### Blocked Domains in the Official Extension
-
-| Category | Blocked Sites |
-|----------|--------------|
-| Banking | Chase, BofA, Wells Fargo, Citibank |
-| Investing/Brokerage | Schwab, Fidelity, Robinhood, E-Trade, Wealthfront, Betterment |
-| Payments/Transfers | PayPal, Venmo, Cash App, Zelle, Stripe, Square, Wise, Western Union, MoneyGram, Adyen, Checkout.com |
-| BNPL | Klarna, Affirm, Afterpay |
-| Neobanks/Fintech | SoFi, Chime, Mercury, Brex, Ramp |
-| Crypto | Coinbase, Binance, Kraken, MetaMask |
-| Gambling | DraftKings, FanDuel, Bet365, Bovada, PokerStars, BetMGM, Caesars |
-| Dating | Tinder, Bumble, Hinge, Match, OKCupid |
-| Adult | Pornhub, XVideos, XNXX |
-| News/Media | NYT, WSJ, Barron's, MarketWatch, Bloomberg, Reuters, Economist, Wired, Vogue |
-| Social Media | Reddit |
-
-Open Claude in Firefox has **none of these restrictions**.
+| Browser link | Native messaging (registry key / manifest) | WebSocket over `wss`, **no native messaging, no registry changes** |
+| Runtime | Node on the host | Docker container (`ocf-hub`) behind your Traefik |
+| Auth | Extension ID | ES256 JWT per browser, verified against a JWKS; unknown browsers are approved in a TUI |
+| Browsers | One | Several at once (LibreWolf, Firefox Developer Edition, ...), selectable per MCP client |
+| Domain blocklist | None | Optional, by category plus custom domains (off by default) |
+| Claude Desktop | MCP entry by hand | Installable extension bundle (`.mcpb`) with an on/off toggle, plus a usage skill |
 
 ## Architecture
 
 ```
-Claude Code / Claude Desktop <--stdio MCP--> mcp-server.js <--TCP--> native-host.js <--native messaging--> Extension <--> Firefox
+Claude Desktop / Code --stdio--> docker exec -i ocf-hub node /app/mcp-server.js --TCP 127.0.0.1:18765--> hub (ocf-hub)
+                                                                                                           ^
+Firefox / LibreWolf extension --wss://ocf.localhost/ws (JWT in Sec-WebSocket-Protocol)--> Traefik --> :18766 (WS bridge)
 ```
 
-Three components:
-1. **Extension** — Manifest V3 using Firefox WebExtension APIs (screenshots via `captureVisibleTab`, input via content script synthetic events, JS eval via `scripting.executeScript`)
-2. **MCP Server** — Node.js process started by Claude Code or Claude Desktop, exposes tools via MCP
-3. **Native Messaging Host** — Bridge between the MCP server and the extension
+- **Hub (`host/`)**: the MCP server and the WebSocket bridge, in one container on the external Docker network `global-proxy`. No host ports are published.
+  The internal client port (18765) listens on loopback only inside the container.
+- **Traefik**: an HTTP router for `ocf.localhost` on `websecure`, using a certificate from a local CA that is name-constrained to `ocf.localhost`
+  (`certs/generate.sh` creates it and drops the leaf into Traefik's watched dynamic directory).
+- **Extension (`extension/`)**: Manifest V3. It creates a non-extractable ES256 key, signs a short-lived JWT, and connects. It offers its public key to the hub
+  so you can approve it in the TUI.
+- **TUI (`ocf-tui`)**: run `docker exec -it ocf-hub ocf-tui` to approve browsers, manage keys and edit settings. Enrollment is deliberately not available
+  through MCP tools.
 
-## Installation
+## Quick start
 
-### Prerequisites
+1. Start the hub: `docker compose up -d --build` (needs the external network `global-proxy`).
+2. Create the certificate: `sh certs/generate.sh <traefik dynamic dir>`, then import `certs/ocf-hub-ca.crt` into the browser
+   (Settings > Privacy & Security > View Certificates > Authorities > Import, trust for websites).
+3. Install the extension (`claude-in-firefox-<version>-unsigned.xpi` from the release, or build it, see below). Unsigned add-ons need
+   `xpinstall.signatures.required=false` in LibreWolf or Firefox Developer Edition; release builds signed through Mozilla install anywhere.
+4. Open the extension options, name the browser, then approve it: `docker exec -it ocf-hub ocf-tui` > Pending approvals.
+5. Give Claude the server: install the `.mcpb` in Claude Desktop (Settings > Extensions, gives a toggle), or
+   `claude mcp add claude-in-firefox -- docker exec -i ocf-hub node /app/mcp-server.js`. Use one of the two, not both.
+6. Optionally copy `skill/firefox-browser/SKILL.md` to `~/.claude/skills/firefox-browser/`.
 
-- **Node.js** v18+
-- **Firefox** 109+
-- **Claude Code** v2.0.73+ and/or **Claude Desktop**
+Full steps, configuration reference and a code map are in [MCP-SETUP.md](MCP-SETUP.md).
 
-### Step 1: Install dependencies
-
-```bash
-cd host
-npm install
-cd ..
-```
-
-### Step 2: Load the extension in Firefox
-
-1. Open `about:debugging` in Firefox
-2. Click **This Firefox**
-3. Click **Load Temporary Add-on...**
-4. Select `extension/manifest.json`
-
-> **Permanent install**: Go to `about:addons` → gear icon → **Install Add-on From File** and select `extension/manifest.json`. Or load the `.xpi` if one is provided.
-
-Unlike Chrome, Firefox assigns the extension ID from `manifest.json` (`open-claude-in-firefox@anthropic`), so you don't need to pass an ID to the install script.
-
-### Step 3: Register the native messaging host
-
-#### macOS / Linux
-
-```bash
-./install.sh
-```
-
-#### Windows (manual)
-
-Firefox on Windows finds native messaging hosts via the registry. Three steps:
-
-**3a.** Create a wrapper script at `host\native-host-wrapper.bat`:
-
-```bat
-@echo off
-node "%~dp0native-host.js"
-```
-
-**3b.** Create the manifest at `host\com.anthropic.open_claude_in_firefox.json` (use the actual absolute path):
-
-```json
-{
-  "name": "com.anthropic.open_claude_in_firefox",
-  "description": "Open Claude in Firefox Native Messaging Host",
-  "path": "C:\\path\\to\\open-claude-in-firefox\\host\\native-host-wrapper.bat",
-  "type": "stdio",
-  "allowed_extensions": ["open-claude-in-firefox@anthropic"]
-}
-```
-
-**3c.** Register it in the registry. Run in PowerShell (adjust the path):
-
-```powershell
-$manifestPath = "C:\path\to\open-claude-in-firefox\host\com.anthropic.open_claude_in_firefox.json"
-New-Item -Path "HKCU:\SOFTWARE\Mozilla\NativeMessagingHosts\com.anthropic.open_claude_in_firefox" -Force |
-  Set-ItemProperty -Name "(Default)" -Value $manifestPath
-```
-
-### Step 4: Restart Firefox
-
-Close **all** Firefox windows and reopen. Firefox reads native messaging host configs on startup.
-
-### Step 5: Add to Claude Code
-
-```bash
-claude mcp add open-claude-in-firefox -- node /absolute/path/to/host/mcp-server.js
-```
-
-Find the absolute path with:
-
-```bash
-# macOS / Linux
-echo "node $(pwd)/host/mcp-server.js"
-
-# Windows (PowerShell)
-"node $(Resolve-Path host\mcp-server.js)"
-```
-
-### Step 5 (alternative): Add to Claude Desktop
-
-Edit your Claude Desktop config file and add an `mcpServers` entry:
-
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "open-claude-in-firefox": {
-      "command": "node",
-      "args": ["/absolute/path/to/host/mcp-server.js"]
-    }
-  }
-}
-```
-
-Fully quit and restart Claude Desktop after saving.
-
-## Verification
-
-Start a new Claude Code (or Claude Desktop) session and test:
-
-```
-Navigate to reddit.com and take a screenshot
-```
-
-Reddit loads. No domain restriction.
-
-## Available Tools
-
-All 18 tools, matching the Claude in Chrome interface:
+## Tools
 
 | Tool | Description |
 |------|-------------|
-| `tabs_context_mcp` | Get MCP window tab context |
-| `tabs_create_mcp` | Create new tab in MCP window |
-| `navigate` | Navigate to URL, back, forward |
-| `computer` | Mouse, keyboard, screenshots (13 actions) |
+| `list_connected_browsers` | Browsers (profiles) connected to the hub |
+| `select_browser` | Choose the browser the following tools act on (needed only when several are connected) |
+| `tabs_context_mcp` | Tabs in the MCP window |
+| `tabs_create_mcp` | New tab in the MCP window |
+| `navigate` | Go to a URL, back or forward |
+| `computer` | Mouse, keyboard, scrolling and screenshots inside the browser |
 | `read_page` | Accessibility tree with element refs |
-| `get_page_text` | Extract article/main text |
-| `find` | Find elements by text/purpose |
+| `get_page_text` | Article/main text |
+| `find` | Find elements by text or purpose |
 | `form_input` | Set form values by ref |
-| `javascript_tool` | Execute JS in page context |
+| `javascript_tool` | Run JavaScript in the page |
 | `read_console_messages` | Console output (filtered) |
 | `read_network_requests` | Network activity |
-| `resize_window` | Resize browser window |
-| `upload_image` | Not supported in Firefox WebExtensions |
-| `gif_creator` | GIF recording (stub) |
-| `shortcuts_list` | List shortcuts (stub) |
-| `shortcuts_execute` | Run shortcut (stub) |
-| `switch_browser` | Switch browser (stub) |
-| `update_plan` | Present plan (auto-approved) |
+| `resize_window` | Resize the browser window |
+| `update_plan` | Present a plan (auto-approved) |
+| `upload_image`, `gif_creator`, `shortcuts_list`, `shortcuts_execute`, `switch_browser` | Stubs or unsupported in Firefox WebExtensions |
 
-## Firefox Notes
+## Domain blocklist
 
-### Tab groups → MCP window
+Extension options > Blocked domains. Categories (banking, investing, payments, buy now pay later, neobanks, crypto, gambling, dating, adult,
+news, social) plus your own domains. Everything is off by default. When on, tools refuse to navigate to or act on matching pages.
 
-The Chrome version uses tab groups to track Claude's tabs. Firefox has no tab groups API, so this extension instead opens a dedicated **MCP window**. All tabs Claude creates live in that window. The window ID is saved to extension storage and recovered automatically after Firefox restarts or the service worker is reloaded.
+## Security model
 
-### Synthetic events
+- A browser can connect only with a key listed in `data/jwks.json`. Tokens are ES256 JWTs (120 s lifetime, one-time `jti`, audience and issuer checked)
+  sent in the `Sec-WebSocket-Protocol` header, and the WebSocket `Origin` must be an extension origin.
+- Unknown browsers are held as pending until a person approves them in the TUI; nothing reachable through MCP can authorize a browser.
+- The extension acts with your real sign-ins. Treat it like giving someone your browser: use the blocklist, and approve actions you would not do yourself.
 
-Firefox WebExtensions cannot use the Chrome DevTools Protocol. Mouse clicks, keyboard input, and scrolling are dispatched as synthetic DOM events from a content script. These events have `isTrusted: false`, which means:
+## Firefox notes
 
-- Most web apps work fine — synthetic events are standard practice for testing frameworks
-- A small number of hardened apps check `event.isTrusted` and ignore synthetic events; those interactions will fail silently
+- **MCP window instead of tab groups.** Firefox has no tab groups API, so Claude's tabs live in a dedicated window; its ID is remembered across restarts.
+- **Synthetic events.** Clicks, typing and scrolling are dispatched as DOM events from a content script (`isTrusted: false`). Most apps work; a few hardened ones
+  ignore them.
+- **Screenshots** capture the active tab; the extension activates the target tab first.
+- **Console monitoring** starts at the first `read_console_messages` call on a tab, so call it early.
+- **Reconnect backoff.** Firefox delays WebSocket reconnects after failures (up to about a minute); tokens live long enough to survive it.
 
-### Screenshots
+## Building and releasing
 
-`tabs.captureVisibleTab()` can only capture the active tab in a window. The extension automatically activates the target tab before each screenshot. If the MCP window is in the background, the tab switch is invisible since Firefox doesn't require the window to be focused.
+- Extension: `docker run --rm -v "$PWD:/src" -w /src node:22-alpine npx --yes web-ext@8 build -s extension -a dist`, rename the zip to `.xpi`.
+- Claude Desktop bundle: `docker run --rm -v "$PWD:/src" -w /src node:22-alpine npx --yes @anthropic-ai/mcpb pack mcpb dist/claude-in-firefox.mcpb`.
+- Releases follow gitflow (`develop`, `release/X.Y.Z` squashed onto `main`, tag `vX.Y.Z`). Pushing a tag runs `.github/workflows/release.yml`, which builds
+  `claude-in-firefox-<version>-unsigned.xpi` (or the signed `claude-in-firefox-<version>.xpi` when the `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` secrets exist)
+  and `claude-in-firefox-<version>.mcpb`, and attaches them to the GitHub release.
 
-### Console monitoring
-
-Console messages are captured via a MAIN-world interceptor injected into the page. Messages logged **before** `read_console_messages` is first called on a tab are not captured. Call `read_console_messages` early in a session to start capturing.
-
-## Updating After Code Changes
-
-No build step. All files are plain JavaScript. After pulling or editing:
+## Updating after code changes
 
 | What changed | What to do |
 |---|---|
-| `extension/background.js`, `content.js`, or `manifest.json` | Reload: `about:debugging` → click the reload icon next to the extension |
-| `host/mcp-server.js` | Kill stale servers and reconnect: `pkill -f "node.*mcp-server"` then `/mcp` in Claude Code |
-| `host/native-host.js` | Restart Firefox (close all windows, reopen) |
-| `install.sh` or native host name changed | Re-run `./install.sh`, restart Firefox, re-add MCP |
+| `extension/` | Rebuild the XPI and reinstall (or reload it in `about:debugging` for a temporary install) |
+| `host/` | `docker compose up -d --build` |
+| `certs/` | Re-run `certs/generate.sh` (leaf valid 730 days) |
+| `mcpb/` | Repack and reinstall the `.mcpb` |
 
-### Quick reset
+## Repository layout
 
-If things are broken and you're not sure why:
-
-```bash
-# 1. Kill all MCP servers
-pkill -f "node.*mcp-server"
-
-# 2. Re-run install
-./install.sh
-
-# 3. Restart Firefox (close all windows, reopen)
-
-# 4. Reload extension in about:debugging
-
-# 5. Reconnect in Claude Code
-# /mcp
-```
-
-## Multiple Sessions
-
-Multiple Claude Code sessions can share the same browser extension. The first session becomes the "primary" (owns the TCP port), and subsequent sessions connect as clients through the primary.
-
-If a session disconnects, kill stale servers and reconnect:
-
-```bash
-pkill -f "node.*mcp-server"
-# then /mcp in each Claude Code session
-```
-
-## Troubleshooting
-
-### Extension not connecting
-
-1. Verify the extension is loaded and enabled in `about:debugging`
-2. Make sure `./install.sh` completed without errors (macOS/Linux) or the registry key is set (Windows)
-3. Restart Firefox completely (all windows closed)
-4. Verify the native messaging manifest exists:
-   - **macOS**: `~/Library/Application Support/Mozilla/NativeMessagingHosts/com.anthropic.open_claude_in_firefox.json`
-   - **Linux**: `~/.mozilla/native-messaging-hosts/com.anthropic.open_claude_in_firefox.json`
-   - **Windows**: check `HKCU\SOFTWARE\Mozilla\NativeMessagingHosts\com.anthropic.open_claude_in_firefox` in the registry
-
-### MCP server not found
-
-Use an absolute path:
-```bash
-claude mcp add open-claude-in-firefox -- node /absolute/path/to/host/mcp-server.js
-```
-
-### "Browser extension is not connected"
-
-The MCP server started but the native host hasn't connected. Try:
-1. Open any webpage in the MCP window (wakes the service worker)
-2. Check service worker logs: `about:debugging` → Inspect the extension's service worker
-3. Verify `host/native-host-wrapper.sh` (macOS/Linux) or `host/native-host-wrapper.bat` (Windows) exists and is executable
-
-### Tools fail immediately after reconnect
-
-Stale MCP server processes from previous sessions may be holding the port:
-
-```bash
-pkill -f "node.*mcp-server"
-```
-
-Then `/mcp` in Claude Code to reconnect.
-
-### Port conflict
-
-Default port is 18765. To change:
-1. Create `~/.config/open-claude-in-firefox/config.json`:
-   ```json
-   { "port": 19000 }
-   ```
-2. Restart Firefox and Claude Code
+`extension/` browser extension, `host/` hub image sources, `certs/` CA and leaf generator, `mcpb/` Claude Desktop bundle, `skill/` usage skill,
+`docker-compose.yml`, `MCP-SETUP.md` (setup guide, authentication details and troubleshooting), `LICENSE`.
 
 ## License
 
-MIT
+This repository is released under the [MIT License](LICENSE).
+
+Upstream notes: the Firefox port this fork starts from ([beto621/open-claude-in-firefox](https://github.com/beto621/open-claude-in-firefox)) declares MIT in its README but
+ships no license file. That port is based on [noemica-io/open-claude-in-chrome](https://github.com/noemica-io/open-claude-in-chrome), which is published under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0). If you plan commercial use or redistribution, check those upstream terms yourself.
+
+This is an independent project and is not affiliated with Anthropic. "Claude" is a trademark of Anthropic.
