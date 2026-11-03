@@ -40,6 +40,18 @@ Firefox / LibreWolf extension --wss://ocf.localhost/ws (JWT in Sec-WebSocket-Pro
 - **TUI (`ocf-tui`)**: run `docker exec -it ocf-hub ocf-tui` to approve browsers, manage keys and edit settings. Enrollment is deliberately not available
   through MCP tools.
 
+## Requirements
+
+| Needed | Details |
+|--------|---------|
+| Docker | Docker Engine with Compose v2 (developed on Docker 29 / Compose 5). The hub, the build tools and the certificate generator all run in containers, so no Node.js, Python or OpenSSL is needed on the host. |
+| Traefik | A running Traefik (developed on v3.7) on an external Docker network named `global-proxy`, with a `websecure` (443) entrypoint, the Docker provider (network `global-proxy`) and the file provider watching a `dynamic` directory (for the certificate). |
+| Browser | Firefox 109 or newer, or a Firefox-based browser such as LibreWolf. It must resolve `*.localhost` to loopback (Firefox does this itself). Unsigned add-ons need LibreWolf, Developer Edition, Nightly or ESR with `xpinstall.signatures.required=false`, or a build signed through Mozilla. |
+| Claude | Claude Desktop (for the `.mcpb` toggle) and/or Claude Code. Both reach the hub with `docker exec -i ocf-hub ...`, so they must run on the same machine as Docker. |
+| Optional | Mozilla (addons.mozilla.org) API key and secret, stored as repo secrets, to sign the XPI in the release workflow. |
+
+Developed and tested on Windows 11 with Docker Desktop and LibreWolf; other platforms should work but are untested.
+
 ## Quick start
 
 1. Start the hub: `docker compose up -d --build` (needs the external network `global-proxy`).
@@ -104,6 +116,19 @@ news, social) plus your own domains. Everything is off by default. When on, tool
   `claude-in-firefox-<version>-unsigned.xpi` (or the signed `claude-in-firefox-<version>.xpi` when the `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` secrets exist)
   and `claude-in-firefox-<version>.mcpb`, and attaches them to the GitHub release.
 
+## Testing
+
+The hub and the blocklist have automated tests (`host/test/`, Node's built-in test runner, 25 tests). They start a real hub process on free ports and play the
+browser and the MCP client, covering JWT authentication (valid, expired, replayed, wrong key or audience, bad Origin), key enrollment through the pending list,
+routing between several browsers, the key store, live settings and the domain blocklist.
+
+```bash
+docker run --rm -v "$PWD:/repo" -w /repo/host node:22-alpine sh -c "npm ci && npm test"
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs them on every push to `main` and `develop` and on pull requests, together with lint and validation
+(extension, bundle manifest, compose file, workflows) and a build of the XPI, the bundle and the hub image. The release workflow only builds and publishes.
+
 ## Updating after code changes
 
 | What changed | What to do |
@@ -115,8 +140,17 @@ news, social) plus your own domains. Everything is off by default. When on, tool
 
 ## Repository layout
 
-`extension/` browser extension, `host/` hub image sources, `certs/` CA and leaf generator, `mcpb/` Claude Desktop bundle, `skill/` usage skill,
-`docker-compose.yml`, `MCP-SETUP.md` (setup guide, authentication details and troubleshooting), `LICENSE`.
+| Path | What it is |
+|------|------------|
+| `extension/` | The browser extension (Manifest V3): connection, tools, blocklist, options page |
+| `host/` | Hub image sources: MCP server, WebSocket bridge, key store, settings, TUI (`ocf-tui`), and its tests (`host/test/`) |
+| `certs/` | Local CA and leaf certificate generator for Traefik |
+| `mcpb/` | Claude Desktop extension bundle (on/off toggle) |
+| `skill/` | `firefox-browser` usage skill for Claude |
+| `docker-compose.yml` | The hub service and its Traefik labels |
+| `.github/workflows/` | Release workflow (builds the XPI and the bundle) |
+| `MCP-SETUP.md` | Setup guide, authentication details, configuration reference, troubleshooting |
+| `LICENSE` | MIT License |
 
 ## License
 

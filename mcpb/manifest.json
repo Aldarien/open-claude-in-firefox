@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "claude-in-firefox",
   "display_name": "Claude in Firefox",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Browser automation through your own Firefox/LibreWolf, via a local Docker hub (ocf-hub).",
   "long_description": "Controls your Firefox-family browser through the Claude MCP browser extension. Requires the local hub container `ocf-hub` to be running (see MCP-SETUP.md) and the extension installed and approved in the hub TUI. Several browser profiles can be connected; use list_connected_browsers / select_browser.",
   "author": { "name": "Aldarien" },
