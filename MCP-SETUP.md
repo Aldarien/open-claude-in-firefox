@@ -105,3 +105,10 @@ Files in `data/`: `jwks.json` (authorized keys, each with a `label`), `pending.j
 - `extension/auth.js`: key pair + JWT. `extension/background.js`: WebSocket connection and tool dispatch + blocklist guard.
 - `extension/blocklist.js`, `extension/options.*`: blocklist and settings page.
 - `certs/`: CA/leaf generator. `docker-compose.yml`, `host/Dockerfile`: container setup.
+
+## Toggle in Claude Desktop (extension bundle) and skill
+- `mcpb/` is a Claude Desktop extension (MCPB) that runs `docker exec -i ocf-hub node /app/mcp-server.js`; it has no bundled server.
+  Build: `docker run --rm -v "$PWD:/src" -w /src node:22-alpine npx --yes @anthropic-ai/mcpb pack mcpb dist/claude-in-firefox.mcpb`.
+  Install by opening the `.mcpb` in Claude Desktop (Settings > Extensions); it can then be switched on/off there.
+  Use either this extension or a `claude mcp add` entry for the same server, not both.
+- `skill/firefox-browser/SKILL.md` tells Claude how to use the tools; copy it to `~/.claude/skills/firefox-browser/`.

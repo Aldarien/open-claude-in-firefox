@@ -1,0 +1,42 @@
+{
+  "manifest_version": "0.2",
+  "name": "claude-in-firefox",
+  "display_name": "Claude in Firefox",
+  "version": "1.0.1",
+  "description": "Browser automation through your own Firefox/LibreWolf, via a local Docker hub (ocf-hub).",
+  "long_description": "Controls your Firefox-family browser through the Claude MCP browser extension. Requires the local hub container `ocf-hub` to be running (see MCP-SETUP.md) and the extension installed and approved in the hub TUI. Several browser profiles can be connected; use list_connected_browsers / select_browser.",
+  "author": { "name": "Aldarien" },
+  "repository": { "type": "git", "url": "https://github.com/Aldarien/open-claude-in-firefox" },
+  "license": "MIT",
+  "server": {
+    "type": "binary",
+    "entry_point": "server/README.txt",
+    "mcp_config": {
+      "command": "docker",
+      "args": ["exec", "-i", "ocf-hub", "node", "/app/mcp-server.js"]
+    }
+  },
+  "tools": [
+    { "name": "list_connected_browsers", "description": "List connected browser profiles" },
+    { "name": "select_browser", "description": "Choose which browser the other tools act on" },
+    { "name": "tabs_context_mcp", "description": "Get the MCP window's tabs" },
+    { "name": "tabs_create_mcp", "description": "Open a new tab" },
+    { "name": "navigate", "description": "Go to a URL, back or forward" },
+    { "name": "computer", "description": "Mouse, keyboard, scroll and screenshots" },
+    { "name": "find", "description": "Find page elements by description" },
+    { "name": "form_input", "description": "Set form values" },
+    { "name": "get_page_text", "description": "Read the page's text" },
+    { "name": "read_page", "description": "Accessibility tree of the page" },
+    { "name": "javascript_tool", "description": "Run JavaScript in the page (debugging)" },
+    { "name": "read_console_messages", "description": "Read console output" },
+    { "name": "read_network_requests", "description": "List network requests" },
+    { "name": "resize_window", "description": "Resize the browser window" },
+    { "name": "gif_creator", "description": "Record GIFs of interactions" },
+    { "name": "upload_image", "description": "Upload an image into a page" },
+    { "name": "shortcuts_list", "description": "List browser shortcuts" },
+    { "name": "shortcuts_execute", "description": "Run a shortcut" },
+    { "name": "switch_browser", "description": "Switch browser" },
+    { "name": "update_plan", "description": "Present a plan" }
+  ],
+  "compatibility": { "platforms": ["win32", "darwin", "linux"] }
+}
