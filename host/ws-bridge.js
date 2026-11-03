@@ -7,7 +7,7 @@ import http from "node:http";
 import fs from "node:fs";
 import { EventEmitter } from "node:events";
 import { WebSocketServer } from "ws";
-import { createLocalJWKSet, jwtVerify } from "jose";
+import { createLocalJWKSet, decodeProtectedHeader, jwtVerify } from "jose";
 
 const PROTOCOL = "ocf.v1";
 const seenJti = new Map(); // jti -> expiry ms
@@ -22,6 +22,9 @@ function rememberJti(jti, expMs) {
 
 async function verifyToken(token, { jwksPath, audience, issuer }) {
   const jwks = JSON.parse(fs.readFileSync(jwksPath, "utf-8"));
+  const { kid } = decodeProtectedHeader(token);
+  const entry = (jwks.keys || []).find((k) => k.kid === kid);
+  if (!entry) throw new Error("unknown key");
   const { payload } = await jwtVerify(token, createLocalJWKSet(jwks), {
     algorithms: ["ES256"],
     audience,
@@ -30,7 +33,7 @@ async function verifyToken(token, { jwksPath, audience, issuer }) {
     requiredClaims: ["exp", "iat", "jti"],
   });
   if (!rememberJti(payload.jti, payload.exp * 1000 + 60000)) throw new Error("token replayed");
-  return payload;
+  return { kid, label: entry.label || kid.slice(0, 8) };
 }
 
 // Makes a WebSocket look like the TCP socket the hub already uses for the browser connection
@@ -62,6 +65,7 @@ export function startWsBridge({ port, host, jwksPath, audience, issuer, onBrowse
   });
 
   server.on("upgrade", async (req, socket, head) => {
+    let info;
     const reject = (code, why) => {
       log(`WS rejected: ${why}`);
       socket.write(`HTTP/1.1 ${code} ${why}\r\nConnection: close\r\n\r\n`);
@@ -73,14 +77,15 @@ export function startWsBridge({ port, host, jwksPath, audience, issuer, onBrowse
       const protocols = String(req.headers["sec-websocket-protocol"] || "").split(",").map((s) => s.trim());
       const token = protocols.find((p) => p && p !== PROTOCOL);
       if (!protocols.includes(PROTOCOL) || !token) return reject(401, "Missing token");
-      await verifyToken(token, { jwksPath, audience, issuer });
+      info = await verifyToken(token, { jwksPath, audience, issuer });
+      info.origin = req.headers.origin;
     } catch (e) {
       return reject(401, "Unauthorized");
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
       ws.isAlive = true;
       ws.on("pong", () => (ws.isAlive = true));
-      onBrowser(new WsSocketAdapter(ws));
+      onBrowser(new WsSocketAdapter(ws), info);
     });
   });
 

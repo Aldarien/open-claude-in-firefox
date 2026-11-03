@@ -15,3 +15,9 @@ No native messaging and no registry changes: the extension connects to the hub o
 - Extension build: `docker run --rm -v "$PWD:/src" -w /src node:22-alpine npx --yes web-ext@8 build -s extension -a dist`; rename the zip to `.xpi`.
 - Blocklist: extension options page. Categories are off by default; custom domains supported.
 - Release Firefox only installs signed add-ons. LibreWolf: try `xpinstall.signatures.required=false`, or sign via AMO unlisted (`web-ext sign`).
+
+## Multiple browsers
+Each browser profile has its own key; add one entry per profile to `data/jwks.json` and give it a `label`
+(`{"kty":"EC","crv":"P-256","x":"…","y":"…","kid":"…","alg":"ES256","use":"sig","label":"librewolf-main"}`).
+With one browser connected it is used automatically; with several, call `list_connected_browsers` then `select_browser`
+(selection is per MCP client). The hub is still a single MCP hub: tab IDs are per browser.
