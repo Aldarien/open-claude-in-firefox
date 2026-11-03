@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { z } from "zod";
+import { startWsBridge } from "./ws-bridge.js";
 
 
 const DEFAULT_PORT = 18765;
@@ -406,6 +407,15 @@ async function start() {
       mode = "primary";
       writePidfile();
       process.stderr.write(`Primary MCP server listening on :${TCP_PORT}\n`);
+      startWsBridge({
+        port: Number(process.env.OCF_WS_PORT || 18766),
+        host: process.env.OCF_BIND_HOST || "127.0.0.1",
+        jwksPath: process.env.OCF_JWKS || "/data/jwks.json",
+        audience: "ocf-hub",
+        issuer: "ocf-extension",
+        onBrowser: (socket) => setupNativeHostConnection(socket, Buffer.alloc(0)),
+        log: (m) => process.stderr.write(m + "\n"),
+      });
       resolve();
     });
   });
