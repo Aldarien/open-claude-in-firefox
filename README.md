@@ -40,6 +40,18 @@ Firefox / LibreWolf extension --wss://ocf.localhost/ws (JWT in Sec-WebSocket-Pro
 - **TUI (`ocf-tui`)**: run `docker exec -it ocf-hub ocf-tui` to approve browsers, manage keys and edit settings. Enrollment is deliberately not available
   through MCP tools.
 
+## Requirements
+
+| Needed | Details |
+|--------|---------|
+| Docker | Docker Engine with Compose v2 (developed on Docker 29 / Compose 5). The hub, the build tools and the certificate generator all run in containers, so no Node.js, Python or OpenSSL is needed on the host. |
+| Traefik | A running Traefik (developed on v3.7) on an external Docker network named `global-proxy`, with a `websecure` (443) entrypoint, the Docker provider (network `global-proxy`) and the file provider watching a `dynamic` directory (for the certificate). |
+| Browser | Firefox 109 or newer, or a Firefox-based browser such as LibreWolf. It must resolve `*.localhost` to loopback (Firefox does this itself). Unsigned add-ons need LibreWolf, Developer Edition, Nightly or ESR with `xpinstall.signatures.required=false`, or a build signed through Mozilla. |
+| Claude | Claude Desktop (for the `.mcpb` toggle) and/or Claude Code. Both reach the hub with `docker exec -i ocf-hub ...`, so they must run on the same machine as Docker. |
+| Optional | Mozilla (addons.mozilla.org) API key and secret, stored as repo secrets, to sign the XPI in the release workflow. |
+
+Developed and tested on Windows 11 with Docker Desktop and LibreWolf; other platforms should work but are untested.
+
 ## Quick start
 
 1. Start the hub: `docker compose up -d --build` (needs the external network `global-proxy`).
@@ -115,8 +127,17 @@ news, social) plus your own domains. Everything is off by default. When on, tool
 
 ## Repository layout
 
-`extension/` browser extension, `host/` hub image sources, `certs/` CA and leaf generator, `mcpb/` Claude Desktop bundle, `skill/` usage skill,
-`docker-compose.yml`, `MCP-SETUP.md` (setup guide, authentication details and troubleshooting), `LICENSE`.
+| Path | What it is |
+|------|------------|
+| `extension/` | The browser extension (Manifest V3): connection, tools, blocklist, options page |
+| `host/` | Hub image sources: MCP server, WebSocket bridge, key store, settings, TUI (`ocf-tui`) |
+| `certs/` | Local CA and leaf certificate generator for Traefik |
+| `mcpb/` | Claude Desktop extension bundle (on/off toggle) |
+| `skill/` | `firefox-browser` usage skill for Claude |
+| `docker-compose.yml` | The hub service and its Traefik labels |
+| `.github/workflows/` | Release workflow (builds the XPI and the bundle) |
+| `MCP-SETUP.md` | Setup guide, authentication details, configuration reference, troubleshooting |
+| `LICENSE` | MIT License |
 
 ## License
 
