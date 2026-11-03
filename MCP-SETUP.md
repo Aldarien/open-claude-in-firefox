@@ -112,3 +112,11 @@ Files in `data/`: `jwks.json` (authorized keys, each with a `label`), `pending.j
   Install by opening the `.mcpb` in Claude Desktop (Settings > Extensions); it can then be switched on/off there.
   Use either this extension or a `claude mcp add` entry for the same server, not both.
 - `skill/firefox-browser/SKILL.md` tells Claude how to use the tools; copy it to `~/.claude/skills/firefox-browser/`.
+
+## Releases (GitHub Actions)
+`.github/workflows/release.yml` builds `claude-in-firefox-<version>.xpi` and `claude-in-firefox-<version>.mcpb` and attaches them to the GitHub release.
+- Push a tag `vX.Y.Z` (the tag must match `extension/manifest.json` and `mcpb/manifest.json`), or run the workflow by hand with an existing tag
+  (Actions > release > Run workflow; the workflow file must be on `main`).
+- Release notes are the tag commit's message (the squashed "Release X.Y.Z" commit).
+- Optional: add repo secrets `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET` (addons.mozilla.org) to also attach a signed `-signed.xpi`
+  (unlisted channel), which installs permanently in regular Firefox.
