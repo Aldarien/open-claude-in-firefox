@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Claude MCP – Blocked domains</title>
+<style>
+  body { font: 14px system-ui, sans-serif; max-width: 640px; margin: 24px auto; padding: 0 16px; }
+  label.cat { display: block; margin: 6px 0; }
+  .doms { color: #666; font-size: 12px; margin-left: 22px; }
+  textarea { width: 100%; height: 100px; }
+  #status { color: green; margin-left: 8px; }
+</style>
+<h1>Blocked domains</h1>
+<p>Tools will refuse to navigate to or act on pages in the selected categories. Everything is off by default.</p>
+<div id="cats"></div>
+<h3>Custom domains</h3>
+<p>One per line. Subdomains are included.</p>
+<textarea id="custom"></textarea>
+<p><button id="save">Save</button><span id="status"></span></p>
+<script src="blocklist.js"></script>
+<script src="options.js"></script>
