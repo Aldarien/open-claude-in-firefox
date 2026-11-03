@@ -1,0 +1,76 @@
+name: release
+
+# Builds the extension (.xpi) and the Claude Desktop bundle (.mcpb) and attaches them to the GitHub release.
+# - Push a tag like v1.0.2 (the workflow must exist in the tagged commit), or
+# - run it by hand (Actions > release > Run workflow) and give an existing tag.
+# Optional: add repo secrets WEB_EXT_API_KEY and WEB_EXT_API_SECRET (addons.mozilla.org) to also attach a signed XPI.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release (e.g. v1.0.1)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+      WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the tag matches the manifest versions
+        run: |
+          VERSION="${TAG#v}"
+          EXT=$(node -p "require('./extension/manifest.json').version")
+          [ "$EXT" = "$VERSION" ] || { echo "extension/manifest.json is $EXT, tag is $VERSION"; exit 1; }
+          if [ -f mcpb/manifest.json ]; then
+            MCPB=$(node -p "require('./mcpb/manifest.json').version")
+            [ "$MCPB" = "$VERSION" ] || { echo "mcpb/manifest.json is $MCPB, tag is $VERSION"; exit 1; }
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Lint the extension
+        run: npx --yes web-ext@8 lint -s extension
+
+      - name: Build the XPI
+        run: |
+          mkdir -p dist
+          npx --yes web-ext@8 build -s extension -a dist --overwrite-dest
+          mv dist/*.zip "dist/claude-in-firefox-${VERSION}.xpi"
+
+      - name: Sign the XPI (unlisted), if AMO credentials are set
+        if: env.WEB_EXT_API_KEY != '' && env.WEB_EXT_API_SECRET != ''
+        run: |
+          npx --yes web-ext@8 sign -s extension -a signed --channel=unlisted \
+            --api-key="$WEB_EXT_API_KEY" --api-secret="$WEB_EXT_API_SECRET"
+          cp signed/*.xpi "dist/claude-in-firefox-${VERSION}-signed.xpi"
+
+      - name: Pack the Claude Desktop extension (.mcpb)
+        if: hashFiles('mcpb/manifest.json') != ''
+        run: npx --yes @anthropic-ai/mcpb pack mcpb "dist/claude-in-firefox-${VERSION}.mcpb"
+
+      - name: Create or update the GitHub release
+        run: |
+          git log -1 --format=%B "refs/tags/${TAG}" > notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md
+          fi
