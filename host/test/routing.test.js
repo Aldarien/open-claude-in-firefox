@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { PROTOCOL, connectWs, fakeBrowser, makeIdentity, mcpClient, startHub, waitFor } from "./helpers.js";
+import { PROTOCOL, connectWs, fakeBrowser, makeIdentity, mcpClient, nextMessage, startHub, waitFor } from "./helpers.js";
 
 describe("browser routing", () => {
   let hub, a, b;
@@ -70,7 +70,7 @@ describe("browser routing", () => {
     const wa = await fakeBrowser(hub, a);
     const second = await connectWs(hub, [PROTOCOL, await a.token()]);
     assert.equal(second.ok, true); // the hub accepts the socket, tells it why, and closes it
-    const msg = await new Promise((resolve) => second.ws.once("message", (d) => resolve(JSON.parse(d.toString()))));
+    const msg = await nextMessage(second.ws);
     assert.equal(msg.type, "error");
     assert.match(msg.error, /already connected/);
     // the first connection must still be the live one
