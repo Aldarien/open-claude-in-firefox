@@ -4,9 +4,11 @@ No native messaging and no registry changes: the extension connects to the hub o
 
 - `docker compose up -d --build` runs the hub (`ocf-hub`) on the external `global-proxy` network; no host ports are published.
   Traefik routes `https://ocf.localhost` (HTTP router on `websecure`) to the hub's WebSocket bridge (port 18766).
-- TLS: Traefik's own generated self-signed certificate. Firefox/LibreWolf cannot be told to trust a certificate by an extension,
-  so open the extension options and use "Trust the hub certificate" once (accept the warning). Traefik regenerates that
-  certificate when it restarts, so you may need to accept it again; a persistent certificate in Traefik's dynamic config avoids that.
+- TLS: a local CA constrained to `ocf.localhost` (name constraints, so it cannot vouch for any other site) and a leaf certificate.
+  Generate/renew with `certs/generate.sh <traefik dynamic dir>`: it writes `ocf-hub.crt`, `ocf-hub.key` and `ocf-hub-tls.yml` into Traefik's
+  watched dynamic directory (no restart; it is only served for SNI `ocf.localhost`, other hosts keep their own certificates) and keeps the CA key in
+  `data/ca` (git-ignored). Import `certs/ocf-hub-ca.crt` once in each browser (Settings > Privacy & Security > View Certificates > Authorities > Import,
+  "Trust this CA to identify websites"). The leaf is valid 730 days; rerun the script to renew.
 - Auth: the extension generates an ES256 key pair (private key non-extractable, in IndexedDB). Copy its public JWK from the options
   page into `data/jwks.json` (`{"keys":[ ... ]}`; re-read on every connection, no restart needed). It then connects with
   `new WebSocket(url, ["ocf.v1", <JWT>])`; the hub verifies the JWT (ES256, `iss`/`aud`, 30 s `exp`, one-time `jti`) from the

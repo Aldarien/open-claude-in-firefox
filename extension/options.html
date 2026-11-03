@@ -11,7 +11,7 @@
 <h1>Connection</h1>
 <p id="conn">Checking…</p>
 <p>Hub URL: <input id="hubUrl" size="36"> <button id="saveUrl">Save</button> <span id="urlNote"></span></p>
-<p>1. <a id="trust" href="#" target="_blank">Trust the hub certificate</a> (Traefik's self-signed certificate: accept the warning once).</p>
+<p>1. Import the hub CA once (<code>certs/ocf-hub-ca.crt</code>): Settings &gt; Privacy &amp; Security &gt; View Certificates &gt; Authorities &gt; Import, tick "Trust this CA to identify websites". Then <a id="trust" href="#" target="_blank">check the hub page</a> (it should open without a warning).</p>
 <p>2. Add this extension's public key to the hub's <code>data/jwks.json</code> (inside <code>"keys": [ … ]</code>):</p>
 <textarea id="jwk" readonly style="height:120px"></textarea>
 <p><button id="copy">Copy key</button></p>
