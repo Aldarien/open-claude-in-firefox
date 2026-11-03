@@ -4,7 +4,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $bat = Join-Path $PSScriptRoot 'native-host.bat'
 $manifest = Join-Path $PSScriptRoot 'com.anthropic.open_claude_in_firefox.json'
 $tpl = Get-Content (Join-Path $PSScriptRoot 'com.anthropic.open_claude_in_firefox.json.template') -Raw
-$tpl.Replace('__NATIVE_HOST_BAT__', ($bat -replace '\','\')) | Set-Content $manifest -Encoding ascii
+$tpl.Replace('__NATIVE_HOST_BAT__', ($bat -replace '\\','\\')) | Set-Content $manifest -Encoding ascii
 $keys = 'HKCU:\SOFTWARE\Mozilla\NativeMessagingHosts\com.anthropic.open_claude_in_firefox',
         'HKCU:\SOFTWARE\LibreWolf\NativeMessagingHosts\com.anthropic.open_claude_in_firefox'
 foreach ($key in $keys) {
