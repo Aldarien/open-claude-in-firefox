@@ -38,19 +38,68 @@ const TCP_PORT = getPort();
 let mode = "primary"; // or "client"
 
 // --- Shared state ---
-let nativeHostSocket = null;
-const pendingRequests = new Map(); // id -> { resolve, reject, timer, tool, args, resent }
+// Connected browsers, keyed by the JWT key id (kid). One entry per browser profile.
+const browsers = new Map(); // kid -> { kid, label, socket }
+// Which browser each MCP client has selected ("local" for this process's own stdio client, else the clientId).
+const selectedBrowser = new Map();
+const HUB_TOOLS = new Set(["list_connected_browsers", "select_browser"]);
+const pendingRequests = new Map(); // id -> { resolve, reject, timer, tool, args, resent, kid }
 let requestIdCounter = 0;
 
 // Primary mode: track client MCP server connections
 const clientSockets = new Map(); // clientId -> socket
 let clientIdCounter = 0;
-// Map from prefixed request ID -> { clientId, originalId }
+// Map from prefixed request ID -> { clientId, originalId, kid }
 const clientRequestMap = new Map();
 
 // Client mode: TCP connection to the primary
 let primarySocket = null;
 let clientBuffer = Buffer.alloc(0);
+
+// --- Browser selection (primary mode) ---
+
+function liveBrowsers() {
+  return [...browsers.values()].filter((b) => b.socket && !b.socket.destroyed);
+}
+
+function describeBrowsers(owner) {
+  const sel = selectedBrowser.get(owner);
+  return liveBrowsers().map((b) => ({ id: b.kid, label: b.label, selected: b.kid === sel }));
+}
+
+// Picks the browser a request should go to: the owner's selection, or the only connected browser.
+function resolveBrowser(owner) {
+  const selKid = selectedBrowser.get(owner);
+  if (selKid) {
+    const b = browsers.get(selKid);
+    if (b && !b.socket.destroyed) return { browser: b };
+    selectedBrowser.delete(owner);
+  }
+  const live = liveBrowsers();
+  if (live.length === 1) return { browser: live[0] };
+  if (live.length === 0) {
+    return { error: "Browser extension is not connected. Make sure the browser is running with the Open Claude in Firefox extension installed, enabled and its key listed in the hub's jwks.json." };
+  }
+  const names = live.map((b) => `${b.label} (${b.kid})`).join(", ");
+  return { error: `Multiple browsers are connected: ${names}. Call select_browser first (use list_connected_browsers to see them).` };
+}
+
+function handleHubTool(owner, tool, args) {
+  const text = (t) => ({ content: [{ type: "text", text: t }] });
+  if (tool === "list_connected_browsers") {
+    const list = describeBrowsers(owner);
+    return text(list.length ? JSON.stringify(list, null, 2) : "No browsers connected.");
+  }
+  // select_browser
+  const want = String(args?.browser ?? "").trim().toLowerCase();
+  const live = liveBrowsers();
+  const match = live.find((b) => b.kid.toLowerCase() === want) || live.find((b) => b.label.toLowerCase() === want);
+  if (!match) {
+    return text(`No connected browser matches "${args?.browser}". Connected: ${live.map((b) => b.label).join(", ") || "none"}.`);
+  }
+  selectedBrowser.set(owner, match.kid);
+  return text(`Selected browser "${match.label}". Tab IDs are specific to this browser; call tabs_context_mcp next.`);
+}
 
 // --- sendToExtension: works in both modes ---
 
@@ -61,17 +110,25 @@ function sendToExtension(tool, args) {
       pendingRequests.delete(id);
       reject(new Error("Tool request timed out after 60s"));
     }, 60000);
-    pendingRequests.set(id, { resolve, reject, timer, tool, args, resent: false });
+    pendingRequests.set(id, { resolve, reject, timer, tool, args, resent: false, kid: null });
 
     if (mode === "primary") {
-      if (!nativeHostSocket || nativeHostSocket.destroyed) {
+      if (HUB_TOOLS.has(tool)) {
         clearTimeout(timer);
         pendingRequests.delete(id);
-        reject(new Error("Browser extension is not connected. Make sure Firefox is running with the Open Claude in Firefox extension installed and enabled."));
+        resolve(handleHubTool("local", tool, args));
         return;
       }
+      const { browser, error } = resolveBrowser("local");
+      if (error) {
+        clearTimeout(timer);
+        pendingRequests.delete(id);
+        reject(new Error(error));
+        return;
+      }
+      pendingRequests.get(id).kid = browser.kid;
       const msg = JSON.stringify({ id, type: "tool_request", tool, args }) + "\n";
-      nativeHostSocket.write(msg);
+      browser.socket.write(msg);
     } else {
       // Client mode: send to primary server
       if (!primarySocket || primarySocket.destroyed) {
@@ -103,7 +160,9 @@ function cleanupPidfile() {
 
 function shutdown() {
   if (mode === "primary") cleanupPidfile();
-  if (nativeHostSocket && !nativeHostSocket.destroyed) nativeHostSocket.destroy();
+  for (const b of browsers.values()) {
+    if (!b.socket.destroyed) b.socket.destroy();
+  }
   if (primarySocket && !primarySocket.destroyed) primarySocket.destroy();
   for (const [, sock] of clientSockets) {
     if (!sock.destroyed) sock.destroy();
@@ -200,15 +259,18 @@ const tcpServer = net.createServer((socket) => {
   });
 });
 
-function setupNativeHostConnection(socket, initialBuffer) {
-  if (nativeHostSocket && !nativeHostSocket.destroyed) {
-    // Already have a native host. Reject.
-    socket.end(JSON.stringify({ type: "error", error: "Another browser profile is already connected." }) + "\n");
+function setupNativeHostConnection(socket, initialBuffer, info = { kid: "legacy", label: "native host" }) {
+  const { kid, label } = info;
+  const existing = browsers.get(kid);
+  if (existing && !existing.socket.destroyed) {
+    // This browser profile (same key) is already connected. Reject.
+    socket.end(JSON.stringify({ type: "error", error: "This browser profile is already connected." }) + "\n");
     socket.destroy();
     return;
   }
 
-  nativeHostSocket = socket;
+  browsers.set(kid, { kid, label, socket });
+  process.stderr.write(`Browser connected: ${label} (${kid}); ${liveBrowsers().length} connected\n`);
   let buffer = initialBuffer;
 
   // Process any data already in the buffer
@@ -227,27 +289,42 @@ function setupNativeHostConnection(socket, initialBuffer) {
     }
   });
 
-  socket.on("error", () => { nativeHostSocket = null; });
+  const forget = () => {
+    const cur = browsers.get(kid);
+    if (cur && cur.socket === socket) browsers.delete(kid);
+  };
+  socket.on("error", forget);
 
   socket.on("close", () => {
-    if (nativeHostSocket === socket) nativeHostSocket = null;
-    if (pendingRequests.size > 0) {
-      setTimeout(() => {
-        if (nativeHostSocket && !nativeHostSocket.destroyed) {
-          for (const [id, entry] of pendingRequests) {
-            if (entry.resent) continue;
-            entry.resent = true;
-            nativeHostSocket.write(JSON.stringify({ id, type: "tool_request", tool: entry.tool, args: entry.args }) + "\n");
-          }
-        } else {
-          for (const [, { reject, timer }] of pendingRequests) {
-            clearTimeout(timer);
-            reject(new Error("Native host disconnected"));
-          }
-          pendingRequests.clear();
+    forget();
+    process.stderr.write(`Browser disconnected: ${label} (${kid}); ${liveBrowsers().length} connected\n`);
+    const mine = [...pendingRequests].filter(([, e]) => e.kid === kid);
+    const proxied = [...clientRequestMap].filter(([, e]) => e.kid === kid);
+    if (mine.length === 0 && proxied.length === 0) return;
+    // Give the browser a few seconds to reconnect before failing its in-flight requests.
+    setTimeout(() => {
+      const back = browsers.get(kid);
+      if (back && !back.socket.destroyed) {
+        for (const [id, entry] of mine) {
+          if (entry.resent || !pendingRequests.has(id)) continue;
+          entry.resent = true;
+          back.socket.write(JSON.stringify({ id, type: "tool_request", tool: entry.tool, args: entry.args }) + "\n");
         }
-      }, 5000);
-    }
+      } else {
+        for (const [id, entry] of mine) {
+          if (!pendingRequests.has(id)) continue;
+          clearTimeout(entry.timer);
+          entry.reject(new Error(`Browser "${label}" disconnected`));
+          pendingRequests.delete(id);
+        }
+      }
+      for (const [prefixedId, e] of proxied) {
+        if (!clientRequestMap.has(prefixedId)) continue;
+        const cs = clientSockets.get(e.clientId);
+        clientRequestMap.delete(prefixedId);
+        if (cs && !cs.destroyed) cs.write(JSON.stringify({ id: e.originalId, type: "tool_error", error: `Browser "${label}" disconnected` }) + "\n");
+      }
+    }, 5000);
   });
 }
 
@@ -271,15 +348,19 @@ function setupClientConnection(socket, initialBuffer) {
         const msg = JSON.parse(line);
         if (msg.type === "tool_request" && msg.id) {
           // Forward to native host with a prefixed ID
+          if (HUB_TOOLS.has(msg.tool)) {
+            // Answered by the hub itself (browser selection is per MCP client).
+            socket.write(JSON.stringify({ id: msg.id, type: "tool_response", result: handleHubTool(clientId, msg.tool, msg.args || {}) }) + "\n");
+            continue;
+          }
           const prefixedId = `c${clientId}_${msg.id}`;
-          clientRequestMap.set(prefixedId, { clientId, originalId: msg.id });
-
-          if (!nativeHostSocket || nativeHostSocket.destroyed) {
+          const { browser, error } = resolveBrowser(clientId);
+          if (error) {
             // Send error back to client
-            socket.write(JSON.stringify({ id: msg.id, type: "tool_error", error: "Browser extension is not connected." }) + "\n");
-            clientRequestMap.delete(prefixedId);
+            socket.write(JSON.stringify({ id: msg.id, type: "tool_error", error }) + "\n");
           } else {
-            nativeHostSocket.write(JSON.stringify({ ...msg, id: prefixedId }) + "\n");
+            clientRequestMap.set(prefixedId, { clientId, originalId: msg.id, kid: browser.kid });
+            browser.socket.write(JSON.stringify({ ...msg, id: prefixedId }) + "\n");
           }
         }
       } catch {}
@@ -297,6 +378,7 @@ function setupClientConnection(socket, initialBuffer) {
   socket.on("error", () => {});
   socket.on("close", () => {
     clientSockets.delete(clientId);
+    selectedBrowser.delete(clientId);
     // Clean up any pending client requests
     for (const [prefixedId, info] of clientRequestMap) {
       if (info.clientId === clientId) clientRequestMap.delete(prefixedId);
@@ -413,7 +495,7 @@ async function start() {
         jwksPath: process.env.OCF_JWKS || "/data/jwks.json",
         audience: "ocf-hub",
         issuer: "ocf-extension",
-        onBrowser: (socket) => setupNativeHostConnection(socket, Buffer.alloc(0)),
+        onBrowser: (socket, info) => setupNativeHostConnection(socket, Buffer.alloc(0), info),
         log: (m) => process.stderr.write(m + "\n"),
       });
       resolve();
@@ -477,6 +559,21 @@ const server = new McpServer({
     });
   };
 }
+// 0. Browser selection (handled by the hub; needed when several browsers are connected)
+server.tool(
+  "list_connected_browsers",
+  "List the browsers (profiles) currently connected to the hub. When more than one is connected, call select_browser before using the other browser tools.",
+  {},
+  async (args) => callTool("list_connected_browsers", args)
+);
+
+server.tool(
+  "select_browser",
+  "Select which connected browser the following browser tools act on. Accepts the browser id or label from list_connected_browsers. Tab IDs are specific to each browser.",
+  { browser: z.string().describe("Browser id or label from list_connected_browsers.") },
+  async (args) => callTool("select_browser", args)
+);
+
 // 1. tabs_context_mcp
 server.tool(
   "tabs_context_mcp",
