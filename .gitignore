@@ -11,3 +11,5 @@ windows/com.anthropic.open_claude_in_firefox.json
 data/jwks.json
 data/ca/
 certs/*.srl
+data/pending.json
+data/config.json

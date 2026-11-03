@@ -14,8 +14,9 @@ services:
     environment:
       OCF_BIND_HOST: "0.0.0.0"
       OCF_JWKS: /data/jwks.json
+      OCF_CONFIG: /data/config.json
     volumes:
-      - ./data:/data:ro
+      - ./data:/data
     networks:
       - global-proxy
     labels:
